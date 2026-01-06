@@ -26,10 +26,9 @@ export function calculateDV(rut:string): string {
 }
 
 export function validateRut(rut: string): boolean {
-    const cleaned = cleanRut(rut)
-    if (cleaned.length < 2) return false
-    const body = cleaned.slice(0,-1)
-    const dv = cleaned.slice(-1)
+    if (rut.length < 2) return false
+    const body = rut.slice(0,-1)
+    const dv = rut.slice(-1)
     if (!/^\d+$/.test(body)) return false
     if (!/^[0-9K]$/.test(dv)) return false
     const expectedDV = calculateDV(body)
