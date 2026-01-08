@@ -2,78 +2,120 @@ import { format, parseISO } from 'date-fns'
 import { toZonedTime, fromZonedTime } from 'date-fns-tz'
 import { es } from 'date-fns/locale'
 
-const CHILE_TIMEZONE = 'America/Santiago'
+// Zona horaria de Chile
+const ZONA_HORARIA_CHILE = 'America/Santiago'
 
-//UTC -> Tiempo en Chile
-export function toChileTime(utcDate: string | Date): Date {
-  const date = typeof utcDate === 'string' ? parseISO(utcDate) : utcDate
-  return toZonedTime(date, CHILE_TIMEZONE)
+/**
+ * Convierte fecha UTC a hora de Chile
+ */
+export function aHoraChile(fechaUtc: string | Date): Date {
+  const fecha = typeof fechaUtc === 'string' ? parseISO(fechaUtc) : fechaUtc
+  return toZonedTime(fecha, ZONA_HORARIA_CHILE)
 }
 
-//Tiempo en Chile -> UTC
-export function toUTC(chileDate: Date): Date {
-  return fromZonedTime(chileDate, CHILE_TIMEZONE)
+/**
+ * Convierte hora de Chile a UTC
+ */
+export function aUtc(fechaChile: Date): Date {
+  return fromZonedTime(fechaChile, ZONA_HORARIA_CHILE)
 }
 
-//Formatear fecha Chile
-export function formatChileDate(
-  date: string | Date,
-  formatStr: string = 'PPPp'
+/**
+ * Formatea una fecha usando la zona horaria de Chile
+ */
+export function formatearFechaChile(
+  fecha: string | Date,
+  formato: string = 'PPPp'
 ): string {
-  const chileDate = typeof date === 'string' ? toChileTime(date) : date
-  
-  return format(chileDate, formatStr, { 
+  const fechaChile = typeof fecha === 'string' ? aHoraChile(fecha) : fecha
+
+  return format(fechaChile, formato, {
     locale: es,
   })
 }
 
-//Formatos predefinidos
-export function formatDateShort(date: string | Date): string {
-  return formatChileDate(date, 'dd/MM/yyyy')
+// Formatos predefinidos
+
+/**
+ * Formato corto: dd/MM/yyyy
+ */
+export function formatearFechaCorta(fecha: string | Date): string {
+  return formatearFechaChile(fecha, 'dd/MM/yyyy')
 }
 
-export function formatDateTime(date: string | Date): string {
-  return formatChileDate(date, 'dd/MM/yyyy HH:mm')
+/**
+ * Formato con hora: dd/MM/yyyy HH:mm
+ */
+export function formatearFechaHora(fecha: string | Date): string {
+  return formatearFechaChile(fecha, 'dd/MM/yyyy HH:mm')
 }
 
-export function formatDateLong(date: string | Date): string {
-  return formatChileDate(date, "EEEE d 'de' MMMM 'de' yyyy")
+/**
+ * Formato largo: "lunes 8 de enero de 2026"
+ */
+export function formatearFechaLarga(fecha: string | Date): string {
+  return formatearFechaChile(fecha, "EEEE d 'de' MMMM 'de' yyyy")
 }
 
-export function formatTimeOnly(date: string | Date): string {
-  return formatChileDate(date, 'HH:mm')
+/**
+ * Solo hora: HH:mm
+ */
+export function formatearSoloHora(fecha: string | Date): string {
+  return formatearFechaChile(fecha, 'HH:mm')
 }
 
-//Validar se encuentra dentro de Horario
-export function isWithinBusinessHours(
-  date: Date,
-  startHour: number = 9,
-  endHour: number = 16
+/**
+ * Verifica si la hora está dentro del horario laboral
+ */
+export function estaDentroDeHorarioLaboral(
+  fecha: Date,
+  horaInicio: number = 9,
+  horaFin: number = 18
 ): boolean {
-  const hour = date.getHours()
-  return hour >= startHour && hour < endHour
+  const hora = fecha.getHours()
+  return hora >= horaInicio && hora < horaFin
 }
 
-export function getMinutesDifference(start: Date, end: Date): number {
-  const diffMs = end.getTime() - start.getTime()
-  return Math.floor(diffMs / (1000 * 60))
+/**
+ * Calcula la diferencia en minutos entre dos fechas
+ */
+export function obtenerDiferenciaMinutos(inicio: Date, fin: Date): number {
+  const diferenciaMs = fin.getTime() - inicio.getTime()
+  return Math.floor(diferenciaMs / (1000 * 60))
 }
 
-//Agregar Minutos
-export function addMinutes(date: Date, minutes: number): Date {
-  const result = new Date(date)
-  result.setMinutes(result.getMinutes() + minutes)
-  return result
+/**
+ * Agrega minutos a una fecha
+ */
+export function agregarMinutos(fecha: Date, minutos: number): Date {
+  const resultado = new Date(fecha)
+  resultado.setMinutes(resultado.getMinutes() + minutos)
+  return resultado
 }
 
-//Verificar Presente
-export function isToday(date: string | Date): boolean {
-  const chileDate = typeof date === 'string' ? toChileTime(date) : date
-  const today = toChileTime(new Date())
-  
+/**
+ * Verifica si una fecha es hoy
+ */
+export function esHoy(fecha: string | Date): boolean {
+  const fechaChile = typeof fecha === 'string' ? aHoraChile(fecha) : fecha
+  const hoy = aHoraChile(new Date())
+
   return (
-    chileDate.getDate() === today.getDate() &&
-    chileDate.getMonth() === today.getMonth() &&
-    chileDate.getFullYear() === today.getFullYear()
+    fechaChile.getDate() === hoy.getDate() &&
+    fechaChile.getMonth() === hoy.getMonth() &&
+    fechaChile.getFullYear() === hoy.getFullYear()
   )
 }
+
+// Alias para compatibilidad con código existente
+export const toChileTime = aHoraChile
+export const toUTC = aUtc
+export const formatChileDate = formatearFechaChile
+export const formatDateShort = formatearFechaCorta
+export const formatDateTime = formatearFechaHora
+export const formatDateLong = formatearFechaLarga
+export const formatTimeOnly = formatearSoloHora
+export const isWithinBusinessHours = estaDentroDeHorarioLaboral
+export const getMinutesDifference = obtenerDiferenciaMinutos
+export const addMinutes = agregarMinutos
+export const isToday = esHoy

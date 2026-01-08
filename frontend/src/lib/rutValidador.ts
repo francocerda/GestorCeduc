@@ -2,6 +2,16 @@ export function cleanRut(rut: string): string {
     return rut.replace(/[.\-\s]/g,'').toUpperCase()
 }
 
+/**
+ * Prepara el RUT para la API de CEDUC (sin puntos, sin guión, sin DV)
+ * Ejemplo: "11.381.569-8" → "11381569"
+ */
+export function prepareRutForAPI(rut: string): string {
+    const cleaned = cleanRut(rut)
+    // Remover el último carácter (dígito verificador)
+    return cleaned.slice(0, -1)
+}
+
 export function formatRut(rut: string): string {
     const cleaned = cleanRut(rut)
     const body = cleaned.slice(0,-1)
