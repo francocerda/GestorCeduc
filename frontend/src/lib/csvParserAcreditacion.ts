@@ -7,8 +7,8 @@
 export interface DatoMinisterioCSV {
     rut: string
     dv: string
-    tipo: string        // Contenido de la tercera columna (FORMULARIO, POSTULACION, etc.)
-    observacion: string // Contenido de la cuarta columna si existe
+    tipo: string        
+    observacion: string 
 }
 
 export interface ResultadoParseCSV {

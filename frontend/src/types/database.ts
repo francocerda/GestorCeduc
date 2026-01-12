@@ -109,3 +109,15 @@ export type EstudianteUpdate = Partial<Omit<Estudiante, 'rut' | 'creado_en'>>
 // Similar para Citas
 export type CitaInsert = Omit<Cita, 'id' | 'creado_en' | 'actualizado_en'>
 export type CitaUpdate = Partial<Omit<Cita, 'id' | 'creado_en'>>
+
+// Estudiantes que NO postularon a FUAS (nuevos)
+export interface NoPostuloFUAS {
+  rut: string
+  nombre: string | null
+  correo: string | null
+  carrera: string | null
+  sede: string | null
+  notificacion_enviada: boolean
+  fecha_notificacion: string | null
+  fecha_cruce: string
+}

@@ -163,6 +163,39 @@ export function useCitas() {
         return actualizarCita(id, { estado: nuevoEstado })
     }, [actualizarCita])
 
+    // Completar cita con documento y descripción (Feature B)
+    const completarCitaConDocumento = useCallback(async (
+        id: string,
+        descripcionSesion: string,
+        documentoUrl: string
+    ): Promise<boolean> => {
+        setCargando(true)
+        setError(null)
+
+        try {
+            const { error: errorActualizar } = await supabase
+                .from('citas')
+                .update({
+                    estado: 'completada' as EstadoCita,
+                    descripcion_sesion: descripcionSesion,
+                    documento_url: documentoUrl,
+                    fecha_documento: new Date().toISOString()
+                })
+                .eq('id', id)
+
+            if (errorActualizar) throw errorActualizar
+            console.log('✅ Cita completada con documento:', id)
+            return true
+        } catch (err) {
+            const mensaje = err instanceof Error ? err.message : 'Error al completar cita'
+            setError(mensaje)
+            console.error('❌ Error al completar cita:', err)
+            return false
+        } finally {
+            setCargando(false)
+        }
+    }, [])
+
     // Obtener citas en un rango de fechas (para verificar disponibilidad)
     const obtenerCitasEnRango = useCallback(async (
         rutAsistente: string,
@@ -198,6 +231,7 @@ export function useCitas() {
         actualizarCita,
         cancelarCita,
         cambiarEstadoCita,
+        completarCitaConDocumento,
         obtenerCitasEnRango,
         // Alias en inglés para compatibilidad
         fetchCitasByEstudiante: obtenerCitasPorEstudiante,

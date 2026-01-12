@@ -1,6 +1,5 @@
 /**
  * Servicio para enviar correos usando Elastic Email API
- * Documentación: https://elasticemail.com/developers/api-documentation/rest-api
  */
 
 // Configuración de Elastic Email
@@ -10,22 +9,22 @@ const EMAIL_REMITENTE = import.meta.env.VITE_SENDER_EMAIL || 'notificaciones@ced
 const NOMBRE_REMITENTE = 'CEDUC - Asuntos Estudiantiles'
 
 interface ResultadoEnvio {
-    exito: boolean
-    mensaje: string
-    transactionId?: string
+  exito: boolean
+  mensaje: string
+  transactionId?: string
 }
 
 interface DatosEstudiante {
-    rut: string
-    nombre: string
-    correo: string
+  rut: string
+  nombre: string
+  correo: string
 }
 
 /**
  * Genera el contenido HTML del email de notificación FUAS
  */
 function generarContenidoEmail(nombreEstudiante: string): string {
-    return `
+  return `
     <!DOCTYPE html>
     <html>
     <head>
@@ -87,53 +86,124 @@ function generarContenidoEmail(nombreEstudiante: string): string {
 }
 
 /**
+ * Genera el contenido HTML del email de RECORDATORIO para postular a FUAS
+ * (Para estudiantes que NO han postulado aún)
+ */
+function generarContenidoEmailRecordatorioFUAS(nombreEstudiante: string): string {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #f59e0b, #ef4444); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+        .btn { display: inline-block; background: #f59e0b; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; margin: 20px 0; font-weight: bold; }
+        .btn:hover { background: #d97706; }
+        .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 12px; }
+        .alert { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; }
+        .urgent { background: #fee2e2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>⚠️ Recordatorio FUAS</h1>
+          <p>No hemos detectado tu postulación</p>
+        </div>
+        <div class="content">
+          <h2>Hola ${nombreEstudiante},</h2>
+          
+          <div class="urgent">
+            <strong>🚨 Importante:</strong> Según nuestros registros, aún <strong>NO has postulado al FUAS</strong> (Formulario Único de Acreditación Socioeconómica).
+          </div>
+          
+          <p>El FUAS es <strong>obligatorio</strong> para acceder a beneficios estudiantiles como:</p>
+          <ul>
+            <li>Gratuidad</li>
+            <li>Becas de Arancel</li>
+            <li>Crédito con Aval del Estado (CAE)</li>
+            <li>Becas de Mantención</li>
+          </ul>
+          
+          <div class="alert">
+            <strong>📅 Fecha límite:</strong> No dejes pasar el plazo. Postula lo antes posible para no perder tus beneficios.
+          </div>
+          
+          <p style="text-align: center;">
+            <a href="https://fuas.cl" class="btn">Postular al FUAS Ahora →</a>
+          </p>
+          
+          <p><strong>¿Necesitas ayuda?</strong> Agenda una cita con la Encargada de Asuntos Estudiantiles a través de nuestra plataforma:</p>
+          
+          <p style="text-align: center;">
+            <a href="${URL_PLATAFORMA}" style="color: #3b82f6;">Acceder a GestorBecas</a>
+          </p>
+          
+          <p>Saludos cordiales,<br>
+          <strong>Equipo de Asuntos Estudiantiles</strong><br>
+          CEDUC UCN</p>
+        </div>
+        <div class="footer">
+          <p>Este es un correo automático, por favor no responder directamente.</p>
+          <p>© ${new Date().getFullYear()} CEDUC UCN - Todos los derechos reservados</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `
+}
+
+/**
  * Envía un correo de notificación FUAS a un estudiante
  */
 export async function enviarNotificacionFUAS(estudiante: DatosEstudiante): Promise<ResultadoEnvio> {
-    try {
-        console.log(`📧 Enviando notificación a ${estudiante.correo}...`)
+  try {
+    console.log(`📧 Enviando notificación a ${estudiante.correo}...`)
 
-        const parametros = new URLSearchParams({
-            apikey: API_KEY,
-            from: EMAIL_REMITENTE,
-            fromName: NOMBRE_REMITENTE,
-            to: estudiante.correo,
-            subject: 'CEDUC - Agenda tu cita para postulación FUAS',
-            bodyHtml: generarContenidoEmail(estudiante.nombre),
-            isTransactional: 'true'
-        })
+    const parametros = new URLSearchParams({
+      apikey: API_KEY,
+      from: EMAIL_REMITENTE,
+      fromName: NOMBRE_REMITENTE,
+      to: estudiante.correo,
+      subject: 'CEDUC - Agenda tu cita para postulación FUAS',
+      bodyHtml: generarContenidoEmail(estudiante.nombre),
+      isTransactional: 'true'
+    })
 
-        const respuesta = await fetch('https://api.elasticemail.com/v2/email/send', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: parametros.toString()
-        })
+    const respuesta = await fetch('https://api.elasticemail.com/v2/email/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: parametros.toString()
+    })
 
-        const datos = await respuesta.json()
+    const datos = await respuesta.json()
 
-        if (datos.success) {
-            console.log(`✅ Email enviado a ${estudiante.correo}:`, datos.data?.transactionid)
-            return {
-                exito: true,
-                mensaje: 'Correo enviado exitosamente',
-                transactionId: datos.data?.transactionid
-            }
-        } else {
-            console.error(`❌ Error al enviar email:`, datos.error)
-            return {
-                exito: false,
-                mensaje: datos.error || 'Error desconocido al enviar correo'
-            }
-        }
-    } catch (error) {
-        console.error('❌ Error en enviarNotificacionFUAS:', error)
-        return {
-            exito: false,
-            mensaje: error instanceof Error ? error.message : 'Error de conexión'
-        }
+    if (datos.success) {
+      console.log(`✅ Email enviado a ${estudiante.correo}:`, datos.data?.transactionid)
+      return {
+        exito: true,
+        mensaje: 'Correo enviado exitosamente',
+        transactionId: datos.data?.transactionid
+      }
+    } else {
+      console.error(`❌ Error al enviar email:`, datos.error)
+      return {
+        exito: false,
+        mensaje: datos.error || 'Error desconocido al enviar correo'
+      }
     }
+  } catch (error) {
+    console.error('❌ Error en enviarNotificacionFUAS:', error)
+    return {
+      exito: false,
+      mensaje: error instanceof Error ? error.message : 'Error de conexión'
+    }
+  }
 }
 
 /**
@@ -141,43 +211,124 @@ export async function enviarNotificacionFUAS(estudiante: DatosEstudiante): Promi
  * Retorna un resumen de los envíos
  */
 export async function enviarNotificacionesMasivas(
-    estudiantes: DatosEstudiante[]
+  estudiantes: DatosEstudiante[]
 ): Promise<{ exitosos: number; fallidos: number; resultados: ResultadoEnvio[] }> {
-    console.log(`📬 Iniciando envío masivo a ${estudiantes.length} estudiantes...`)
+  console.log(`📬 Iniciando envío masivo a ${estudiantes.length} estudiantes...`)
 
-    const resultados: ResultadoEnvio[] = []
-    let exitosos = 0
-    let fallidos = 0
+  const resultados: ResultadoEnvio[] = []
+  let exitosos = 0
+  let fallidos = 0
 
-    // Enviar secuencialmente para evitar límites de rate
-    for (const estudiante of estudiantes) {
-        const resultado = await enviarNotificacionFUAS(estudiante)
-        resultados.push(resultado)
+  // Enviar secuencialmente para evitar límites de rate
+  for (const estudiante of estudiantes) {
+    const resultado = await enviarNotificacionFUAS(estudiante)
+    resultados.push(resultado)
 
-        if (resultado.exito) {
-            exitosos++
-        } else {
-            fallidos++
-        }
-
-        // Pequeña pausa entre envíos para respetar rate limits
-        await new Promise(resolve => setTimeout(resolve, 200))
+    if (resultado.exito) {
+      exitosos++
+    } else {
+      fallidos++
     }
 
-    console.log(`📊 Envío masivo completado: ${exitosos} exitosos, ${fallidos} fallidos`)
+    // Pequeña pausa entre envíos para respetar rate limits
+    await new Promise(resolve => setTimeout(resolve, 200))
+  }
 
-    return { exitosos, fallidos, resultados }
+  console.log(`📊 Envío masivo completado: ${exitosos} exitosos, ${fallidos} fallidos`)
+
+  return { exitosos, fallidos, resultados }
 }
 
 /**
  * Verifica si la API de Elastic Email está funcionando
  */
 export async function verificarConexionEmail(): Promise<boolean> {
-    try {
-        const respuesta = await fetch(`https://api.elasticemail.com/v2/account/load?apikey=${API_KEY}`)
-        const datos = await respuesta.json()
-        return datos.success === true
-    } catch {
-        return false
+  try {
+    const respuesta = await fetch(`https://api.elasticemail.com/v2/account/load?apikey=${API_KEY}`)
+    const datos = await respuesta.json()
+    return datos.success === true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Envía un recordatorio FUAS a un estudiante que NO ha postulado
+ */
+export async function enviarRecordatorioFUAS(estudiante: DatosEstudiante): Promise<ResultadoEnvio> {
+  try {
+    console.log(`📧 Enviando recordatorio FUAS a ${estudiante.correo}...`)
+
+    const parametros = new URLSearchParams({
+      apikey: API_KEY,
+      from: EMAIL_REMITENTE,
+      fromName: NOMBRE_REMITENTE,
+      to: estudiante.correo,
+      subject: '⚠️ CEDUC - Recuerda postular al FUAS',
+      bodyHtml: generarContenidoEmailRecordatorioFUAS(estudiante.nombre),
+      isTransactional: 'true'
+    })
+
+    const respuesta = await fetch('https://api.elasticemail.com/v2/email/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: parametros.toString()
+    })
+
+    const datos = await respuesta.json()
+
+    if (datos.success) {
+      console.log(`✅ Recordatorio enviado a ${estudiante.correo}:`, datos.data?.transactionid)
+      return {
+        exito: true,
+        mensaje: 'Recordatorio enviado exitosamente',
+        transactionId: datos.data?.transactionid
+      }
+    } else {
+      console.error(`❌ Error al enviar recordatorio:`, datos.error)
+      return {
+        exito: false,
+        mensaje: datos.error || 'Error desconocido al enviar recordatorio'
+      }
     }
+  } catch (error) {
+    console.error('❌ Error en enviarRecordatorioFUAS:', error)
+    return {
+      exito: false,
+      mensaje: error instanceof Error ? error.message : 'Error de conexión'
+    }
+  }
+}
+
+/**
+ * Envía recordatorios FUAS masivos a estudiantes que NO postularon
+ */
+export async function enviarRecordatoriosMasivosFUAS(
+  estudiantes: DatosEstudiante[]
+): Promise<{ exitosos: number; fallidos: number; resultados: ResultadoEnvio[] }> {
+  console.log(`📬 Iniciando envío de recordatorios FUAS a ${estudiantes.length} estudiantes...`)
+
+  const resultados: ResultadoEnvio[] = []
+  let exitosos = 0
+  let fallidos = 0
+
+  for (const estudiante of estudiantes) {
+    const resultado = await enviarRecordatorioFUAS(estudiante)
+    resultados.push(resultado)
+
+    if (resultado.exito) {
+      exitosos++
+    } else {
+      fallidos++
+    }
+
+    // Pequeña pausa entre envíos
+    await new Promise(resolve => setTimeout(resolve, 200))
+  }
+
+  console.log(`📊 Recordatorios FUAS completados: ${exitosos} exitosos, ${fallidos} fallidos`)
+
+  return { exitosos, fallidos, resultados }
 }

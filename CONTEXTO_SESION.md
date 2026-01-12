@@ -1,8 +1,9 @@
 # 📚 CONTEXTO COMPLETO - Proyecto GestorCeduc FUAS
 
-**Fecha:** 8 de enero de 2026  
+**Fecha:** 12 de enero de 2026  
 **Modalidad:** Desarrollo de plataforma FUAS  
-**Estado:** 95% Completo
+**Estado:** 99% Completo  
+**Repositorio:** [github.com/francocerda/GestorCeduc](https://github.com/francocerda/GestorCeduc)
 
 ---
 
@@ -23,6 +24,7 @@ Plataforma web para automatizar la gestión de postulaciones al beneficio FUAS (
 | Routing | React Router DOM | 7.11.0 |
 | Fechas | date-fns + date-fns-tz | 4.1.0 / 3.2.0 |
 | Cliente DB | @supabase/supabase-js | 2.89.0 |
+| Emails | Elastic Email API | v2 |
 | Persistencia | localStorage | - |
 
 ---
@@ -37,38 +39,139 @@ Plataforma web para automatizar la gestión de postulaciones al beneficio FUAS (
 - ✅ Índices en columnas de búsqueda frecuente
 - ✅ Timestamps automáticos
 
+#### Esquema tabla `estudiantes_fuas` (IMPORTANTE)
+```sql
+-- Esquema real verificado el 9 de enero 2026
+CREATE TABLE estudiantes_fuas (
+  rut TEXT PRIMARY KEY,
+  correo TEXT NOT NULL,
+  nombre TEXT,
+  debe_postular BOOLEAN DEFAULT true,
+  tipo_beneficio TEXT,      -- antes: formulario_ministerio
+  carrera TEXT,
+  origen TEXT,              -- antes: sede
+  fecha_cruce TIMESTAMPTZ DEFAULT now()
+);
+```
+> ⚠️ **Nota:** NO existen las columnas `formulario_ministerio`, `observacion_ministerio`, `sede`, `notificacion_enviada`
+
+### 3. Backend e Integración (Nuevo)
+- ✅ Servidor Node.js + Express
+- ✅ Conexión a SQL Server (mssql) con soporte para TLS legacy
+- ✅ Endpoints API: Sync Instituto, Cruzar Datos, Estudiantes Pendientes
+- ✅ Cliente Supabase (service role) para operaciones administrativas
+- ✅ Manejo de grandes volúmenes de datos (50MB payload limit)
+
 ### 2. Estructura de Carpetas
 ```
+backend/                   ✅ NUEVO
+├── server.js              ✅ (API Express + SQL Sync + Cruce)
+├── test-connection.js     ✅ (Script prueba SQL Server)
+├── package.json           ✅
+└── .env                   ✅ (Credenciales SQL + Supabase Service Key)
+
 frontend/src/
 ├── components/
-│   ├── ui/                 ✅ COMPLETO
-│   │   ├── Button.tsx      (variantes: primary, secondary, danger, ghost)
-│   │   ├── Input.tsx       (con label, error, icon)
-│   │   ├── Card.tsx        (con header, subtitle, actions)
-│   │   ├── Badge.tsx       (status con colores + helpers)
-│   │   ├── Modal.tsx       (portal, blur, keyboard support)
+│   ├── ui/                    ✅ COMPLETO
+│   │   ├── Button.tsx         (variantes: primary, secondary, danger, ghost)
+│   │   ├── Input.tsx          (con label, error, icon)
+│   │   ├── Card.tsx           (con header, subtitle, actions)
+│   │   ├── Badge.tsx          (status con colores + helpers)
+│   │   ├── Modal.tsx          (portal, blur, keyboard support)
+│   │   ├── FileUpload.tsx     ✅ (drag & drop, validación)
+│   │   ├── Skeleton.tsx       ✅ (loading states)
+│   │   ├── Toast.tsx          ✅ (notificaciones)
 │   │   └── ProtectedRoute.tsx
 │   └── features/
 │       └── TimeSlotPicker.tsx ✅ (slots de 15 min)
 ├── pages/
-│   ├── LoginPage.tsx       ✅ (role-based redirect + password recovery)
-│   ├── StudentPortal.tsx   ✅ (citas display + cancel button)
-│   ├── SocialWorkerPortal.tsx ✅ (dashboard completo)
+│   ├── LoginPage.tsx          ✅ (role-based redirect + password recovery)
+│   ├── StudentPortal.tsx      ✅ (citas display + cancel button)
+│   ├── SocialWorkerPortal.tsx ✅ (dashboard + tabs + carga CSV)
 │   └── BookAppointmentPage.tsx ✅ (3-step booking)
 ├── hooks/
-│   ├── useCitas.ts         ✅ (CRUD citas completo)
-│   └── useStudents.ts      ✅ (filtros, búsqueda, conteo)
+│   ├── useCitas.ts            ✅ (CRUD citas completo)
+│   └── useStudents.ts         ✅ (filtros, búsqueda, conteo)
 ├── contexts/
-│   └── AuthContext.tsx     ✅ (API CEDUC + sync Supabase)
+│   └── AuthContext.tsx        ✅ (API CEDUC + sync Supabase)
 ├── lib/
-│   ├── supabase.ts         ✅
-│   ├── ceducApi.ts         ✅ (login + recuperar contraseña)
-│   ├── rutValidador.ts     ✅ (Módulo 11 + prepareRutForAPI)
-│   └── dateUtils.ts        ✅ (zona horaria Chile)
+│   ├── supabase.ts            ✅
+│   ├── ceducApi.ts            ✅ (login + recuperar contraseña)
+│   ├── rutValidador.ts        ✅ (Módulo 11 + prepareRutForAPI)
+│   ├── dateUtils.ts           ✅ (zona horaria Chile)
+│   ├── csvParser.ts           ✅ (parseo archivos Ministerio)
+│   └── emailService.ts        ✅ (Elastic Email API)
 ├── types/
-│   ├── database.ts         ✅ (interfaces + utility types)
-│   └── auth.ts             ✅ (LoginResponse, User, Role)
-└── App.tsx                 ✅ (rutas: /, /login, /estudiante, /agendar, /asistente)
+│   ├── database.ts            ✅ (interfaces + utility types)
+│   └── auth.ts                ✅ (LoginResponse, User, Role)
+└── App.tsx                    ✅ (rutas: /, /login, /estudiante, /agendar, /asistente)
+```
+
+---
+
+## 📤 SISTEMA DE GESTIÓN FUAS (Sync + Cukce)
+
+### Arquitectura de Integración
+| Componente | Descripción |
+|------------|-------------|
+| `Sync Instituto` | Backend se conecta a SQL Server y sincroniza matriculados a Supabase (tabla `datos_instituto`) |
+| `Carga Ministerio` | Frontend sube CSV gigantey backend procesa cruce de datos (RUTs) |
+| `Paginación` | Tabla optimizada con paginación (30 items) para visualizar resultados del cruce |
+
+### Flujo de Datos
+1. **Sincronización:** SQL Server -> Backend -> Supabase (`datos_instituto`)
+2. **Carga CSV:** Archivo local -> Frontend -> Backend (`datos_ministerio` en memoria)
+3. **Cruce:** `datos_ministerio` ∩ `datos_instituto` -> `estudiantes_fuas`
+4. **Visualización:** Frontend lee `estudiantes_fuas` (estudiantes matriculados que deben postular)
+
+### Funcionalidades del Parser
+```typescript
+parsearCSVMinisterio(contenido: string): ResultadoParseCSV
+// - Detecta automáticamente separador (;, ,, tab)
+// - Busca columnas: RUT, DV, TIPO, OBSERVACION
+// - Limpia y valida RUTs (7-9 dígitos)
+// - Reporta errores por fila
+// - Retorna: datos válidos, errores, estadísticas
+
+validarArchivoCSV(archivo: File): { valido: boolean; error?: string }
+// - Verifica extensión .csv
+// - Límite 50MB
+
+leerArchivoComoTexto(archivo: File): Promise<string>
+// - Lee archivo como UTF-8
+```
+
+### Formato CSV Aceptado
+```csv
+RUT;DV;TIPO_FORMULARIO;OBSERVACION
+12345678;9;FUAS_2026;pendiente
+```
+
+---
+
+## 📧 SISTEMA DE NOTIFICACIONES EMAIL
+
+### Configuración (Elastic Email API)
+```typescript
+// Variables de entorno
+VITE_ELASTIC_EMAIL_API_KEY
+VITE_PLATFORM_URL
+VITE_SENDER_EMAIL
+```
+
+### Funciones Disponibles
+```typescript
+enviarNotificacionFUAS(estudiante: DatosEstudiante): Promise<ResultadoEnvio>
+// - Envía email con template HTML profesional
+// - Incluye botón de acceso a la plataforma
+// - Instrucciones paso a paso
+
+enviarNotificacionesMasivas(estudiantes: DatosEstudiante[]): Promise<Resumen>
+// - Envío secuencial con rate limiting (200ms entre emails)
+// - Retorna conteo exitosos/fallidos
+
+verificarConexionEmail(): Promise<boolean>
+// - Verifica conexión con API
 ```
 
 ---
@@ -148,6 +251,10 @@ const ROLES_ASISTENTE_SOCIAL = ['jef_dae', 'enc_aes']
 - ✅ **Tab "Citas":**
   - Citas de hoy con acciones
   - Lista de todas las citas
+- ✅ **Tab "Carga de Datos":**
+  - Upload de CSV del Ministerio
+  - Modal con resultados del procesamiento
+  - Contador de registros válidos/errores
 - ✅ Modal de detalle de cita con acciones:
   - Confirmar
   - Marcar completada
@@ -164,6 +271,9 @@ const ROLES_ASISTENTE_SOCIAL = ['jef_dae', 'enc_aes']
 | Input | `Input.tsx` | label, error state, icon opcional |
 | Card | `Card.tsx` | title, subtitle, actions slot |
 | Modal | `Modal.tsx` | portal, backdrop blur, Escape key, sizes: sm/md/lg |
+| FileUpload | `FileUpload.tsx` | drag & drop, validación tipo/tamaño, preview |
+| Skeleton | `Skeleton.tsx` | loading placeholders animados |
+| Toast | `Toast.tsx` | notificaciones: success/error/warning/info, auto-dismiss |
 | TimeSlotPicker | `TimeSlotPicker.tsx` | slots 15min, 9:00-18:00, availability check |
 
 ---
@@ -226,58 +336,200 @@ const parseDateString = (dateStr: string): Date => {
 - Typo `corre` vs `correo` en columnas
 - `throw Error` vs `throw error` (case-sensitive)
 
+### Integración Backend
+- **Error 413 (Payload Too Large):** Aumentado límite de `express.json` a **50MB** para soportar CSVs del Ministerio (140k+ registros).
+- **Error Sync (`fecha_sync`):** Corregido nombre de columna a `fecha_carga` para coincidir con esquema de Supabase.
+- **Conexión SQL Server Legacy:** Configurado `encrypt: false` y `trustServerCertificate: true` para compatibilidad.
+- **Optimización Cruce de Datos (CRÍTICO):** 
+  - Problema: Error 500 al enviar 144k RUTs en consulta SQL `IN`.
+  - Solución: Procesamiento **In-Memory**. Se carga la tabla instituto (~2200 registros) a RAM y se cruza localmente.
+- **Batch Upsert:** Implementada inserción por lotes de 500 registros para evitar timeouts en Supabase al guardar resultados masivos.
+- **Normalización de RUTs:** Corrección crítica en `limpiarRut` para eliminar Dígito Verificador antes de comparar, resolviendo el problema de "cero coincidencias".
+- **Desincronización de Columnas Supabase (9 enero 2026 - CRÍTICO):**
+  - **Problema:** El cruce encontraba 285 estudiantes pero la tabla `estudiantes_fuas` quedaba vacía. El backend intentaba insertar columnas que no existían en la tabla.
+  - **Columnas incorrectas:** `formulario_ministerio`, `observacion_ministerio`, `sede`, `notificacion_enviada`
+  - **Columnas reales:** `rut`, `correo`, `nombre`, `debe_postular`, `tipo_beneficio`, `carrera`, `origen`, `fecha_cruce`
+  - **Solución:** Corregido mapeo en `server.js` (líneas 217-230): `sede` → `origen`, `formulario_ministerio` → `tipo_beneficio`. Actualizado tipo `EstudianteFUASCruce` en `instituteApi.ts`. Removidas referencias a `notificacion_enviada` en `SocialWorkerPortal.tsx`.
+- **FileUpload se quedaba "procesando":** El componente no reseteaba el estado `procesandoCSV` cuando el CSV no tenía registros válidos. Corregido agregando `setProcesandoCSV(false)` antes del `return` temprano.
 ---
 
-## 📊 ESTADO ACTUAL: 95% Completo
+## 📤 SISTEMA DE DOCUMENTOS (NUEVO - 12 Enero 2026)
+
+### Feature A: Estudiantes No Postulantes suben Comprobante
+
+**Flujo:**
+1. Sistema detecta estudiantes que no aparecen en CSV del Ministerio → `no_postularon_fuas`
+2. Asistente envía recordatorio por email
+3. Estudiante entra a su portal → ve alerta naranja "Debes subir comprobante"
+4. Estudiante sube PDF → se guarda en Supabase Storage bucket `fuas-comprobantes`
+5. Asistente revisa documento en Tab FUAS → Valida ✓ o Rechaza ✗
+6. Si rechazado: estudiante puede re-subir con nuevo documento
+
+**Estados de documento:**
+| Estado | Vista Estudiante | Vista Asistente |
+|--------|------------------|-----------------|
+| `null` (sin doc) | Alerta naranja + botón subir | `-` |
+| `pendiente` | "Tu documento está en revisión" | Botón "Revisar" |
+| `validado` | Alerta verde "Validado" | Badge verde |
+| `rechazado` | Alerta roja + comentario + re-subir | Badge rojo |
+
+### Feature B: Documento obligatorio al Completar Cita
+
+**Flujo:**
+1. Asistente abre cita confirmada → click "Completar"
+2. Se abre modal con campos obligatorios:
+   - Descripción de la sesión (textarea)
+   - Comprobante PDF (FileUpload)
+3. Documento se guarda en bucket `citas-documentos`
+4. Cita se marca como completada con URL del documento
+
+### Archivos Nuevos/Modificados
+
+| Archivo | Cambio |
+|---------|--------|
+| `storageService.ts` | **NUEVO** - Funciones: `subirDocumentoCita()`, `subirComprobanteFUAS()`, `validarArchivoPDF()` |
+| `StudentPortal.tsx` | Alerta dinámica según estado documento + upload de comprobante FUAS |
+| `SocialWorkerPortal.tsx` | Modal completar cita con PDF + Modal validación documento |
+| `useCitas.ts` | Función `completarCitaConDocumento()` |
+| `instituteApi.ts` | Interface `NoPostulanteResult` con campos documento |
+
+### Columnas agregadas en Supabase
+
+```sql
+-- Tabla no_postularon_fuas
+ALTER TABLE no_postularon_fuas ADD COLUMN
+    documento_url TEXT,
+    documento_estado TEXT DEFAULT 'pendiente',
+    fecha_documento TIMESTAMPTZ,
+    validado_por TEXT,
+    comentario_rechazo TEXT;
+
+-- Tabla citas
+ALTER TABLE citas ADD COLUMN
+    descripcion_sesion TEXT,
+    documento_url TEXT,
+    fecha_documento TIMESTAMPTZ;
+```
+
+### Buckets Supabase Storage
+
+| Bucket | Contenido | Privacidad |
+|--------|-----------|------------|
+| `fuas-comprobantes` | PDFs de estudiantes no postulantes | Privado |
+| `citas-documentos` | PDFs adjuntos al completar citas | Privado |
+
+---
+
+## 🎨 MEJORAS UI/UX TAB FUAS (12 Enero 2026)
+
+### Dashboard
+- 4 cards (antes 3): Pendientes, Citas Hoy, Completadas, **Docs por Validar**
+- Card Docs se resalta en ámbar si hay documentos pendientes
+
+### Filtros de Estado Documento
+```
+[Todos (623)] [Sin documento (620)] [Por validar (2)] [Validados (1)] [Rechazados (0)]
+```
+- Botones pill con colores distintivos
+- Conteo en tiempo real
+- Resetea paginación al cambiar filtro
+
+### Modal de Validación
+- Info del estudiante (nombre, RUT, correo)
+- Preview del PDF en iframe embebido
+- Link "Abrir en nueva pestaña"
+- Botones grandes: [Rechazar] rojo + [Validar ✓] verde
+
+---
+
+## 📊 ESTADO ACTUAL: 100% Completo
 
 | Módulo | Progreso |
 |--------|----------|
 | Setup e infraestructura | 100% ✅ |
-| Utilidades base | 100% ✅ |
 | Autenticación híbrida | 100% ✅ |
-| LoginPage | 100% ✅ |
-| StudentPortal | 100% ✅ |
-| BookAppointmentPage | 100% ✅ |
-| SocialWorkerPortal | 100% ✅ |
-| Componentes UI | 100% ✅ |
-| Custom Hooks | 100% ✅ |
-| ETL Python | 0% ⏳ |
-| Dashboard Métricas | 0% ⏳ |
-| Notificaciones Email | 0% ⏳ |
+| Cruce de Datos FUAS | 100% ✅ |
+| Detección No Postulantes | 100% ✅ |
+| **Sistema Documentos (Feature A/B)** | 100% ✅ |
+| **UI/UX Tab FUAS** | 100% ✅ |
+| Dashboard Métricas | 100% ✅ |
+
+---
+
+## 🗺 ARQUITECTURA DE TABLAS
+
+```
+┌──────────────────────┐
+│   datos_instituto    │  ← SQL Server sync
+│   2254 matriculados  │
+└──────────┬───────────┘
+           │ Cruce con CSV Ministerio
+           ▼
+┌──────────────────────┐     ┌──────────────────────┐
+│   estudiantes_fuas   │     │  no_postularon_fuas  │
+│  Deben postular (290)│     │ No aparecen en CSV   │
+│                      │     │   (623 registros)    │
+└──────────────────────┘     └──────────┬───────────┘
+                                        │
+                              ┌─────────┴─────────┐
+                              ▼                   ▼
+                       documento_estado     documento_estado
+                        = 'validado'         = 'rechazado'
+                              │                   │
+                              ▼                   ▼
+                       Caso resuelto         Puede re-subir
+```
+
+### Relación con Citas (Independiente)
+- Tabla `citas` usa `rut_estudiante` FK a `estudiantes`
+- Las citas funcionan independiente del estado FUAS
+- Un estudiante en `no_postularon_fuas` puede agendar citas normalmente
 
 ---
 
 ## 🎯 PENDIENTE
 
 ### Prioridad Alta
+- [ ] Configurar RLS policies para buckets Storage
 - [ ] Probar flujo completo en producción
+- [ ] Variables de entorno en servidor
 
 ### Prioridad Media
-- [ ] Scripts Python (ETL) para CSVs del gobierno
-- [ ] Dashboard con métricas y gráficos
-- [ ] Sistema de notificaciones (email recordatorio 24h)
+- [ ] Limpiar automáticamente `no_postularon_fuas` cuando aparezcan en nuevo CSV
 - [ ] Export de reportes a Excel
+- [ ] Logs de auditoría
 
 ### Prioridad Baja
-- [ ] Selector de rol para usuarios con múltiples roles
+- [ ] Dark mode
 - [ ] Confirmar cita desde email
-- [ ] Historial de cambios de estado
 
 ---
 
 ## 🚀 COMANDOS ÚTILES
 
 ```bash
-# Desarrollo
+# Desarrollo Frontend
 cd frontend && npm run dev
+
+# Desarrollo Backend
+cd backend && npm start
 
 # Build producción
 cd frontend && npm run build
-
-# Verificar tipos
-cd frontend && npx tsc --noEmit
 ```
 
 ---
 
-**Última actualización:** 8 de enero de 2026, 09:07 hrs
+## 📁 ARCHIVOS IMPORTANTES
+
+| Archivo | Descripción |
+|---------|-------------|
+| `CONTEXTO_SESION.md` | Este documento |
+| `frontend/src/lib/storageService.ts` | Subida de PDFs a Storage |
+| `backend/server.js` | API + Sync SQL Server |
+| `frontend/.env` | Variables Supabase/APIs |
+
+---
+
+**Última actualización:** 12 de enero de 2026, 15:20 hrs
+
