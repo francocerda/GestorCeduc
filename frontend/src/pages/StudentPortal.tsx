@@ -6,16 +6,16 @@ import { useToast } from '../components/ui/Toast'
 import { supabase } from '../lib/supabase'
 import { formatDateTime, formatDateShort } from '../lib/dateUtils'
 import { subirComprobanteFUAS, validarArchivoPDF } from '../lib/storageService'
-import type { Estudiante, EstadoCita, AsistenteSocial } from '../types/database'
+import type { Estudiante, EstadoCita, AsistenteSocial, EstadoGestionFUAS } from '../types/database'
 import Card from '../components/ui/Card'
 import Badge, { getCitaStatusVariant, getCitaStatusLabel } from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 
-// Tipo para datos de no postulante
-interface NoPostulanteData {
+// Tipo para datos de gestión FUAS
+interface GestionFUASData {
   rut: string
+  estado: EstadoGestionFUAS
   documento_url: string | null
-  documento_estado: string | null
   comentario_rechazo: string | null
 }
 
@@ -41,8 +41,8 @@ export default function StudentPortal() {
   const [cargando, setCargando] = useState(true)
   const [cancelandoId, setCancelandoId] = useState<string | null>(null)
 
-  // Estado para no postulante FUAS
-  const [noPostulanteData, setNoPostulanteData] = useState<NoPostulanteData | null>(null)
+  // Estado para gestión FUAS
+  const [gestionFUASData, setGestionFUASData] = useState<GestionFUASData | null>(null)
   const [archivoComprobante, setArchivoComprobante] = useState<File | null>(null)
   const [subiendoComprobante, setSubiendoComprobante] = useState(false)
 
@@ -65,15 +65,15 @@ export default function StudentPortal() {
         const citasData = await fetchCitasByEstudiante(user.rut)
         setCitas(citasData as CitaConAsistente[])
 
-        // Verificar si está en no_postularon_fuas
-        const { data: noPostulante } = await supabase
-          .from('no_postularon_fuas')
-          .select('rut, documento_url, documento_estado, comentario_rechazo')
+        // Verificar si está en gestion_fuas
+        const { data: gestionFuas } = await supabase
+          .from('gestion_fuas')
+          .select('rut, estado, documento_url, comentario_rechazo')
           .eq('rut', user.rut)
           .single()
 
-        if (noPostulante) {
-          setNoPostulanteData(noPostulante)
+        if (gestionFuas) {
+          setGestionFUASData(gestionFuas)
         }
       } catch (error) {
         console.error('Error al cargar datos:', error)
@@ -170,156 +170,171 @@ export default function StudentPortal() {
           </div>
         )}
 
-        {/* Alerta No Postularon FUAS - con opción de subir comprobante */}
-        {noPostulanteData && (
-          <div className={`border rounded-lg p-4 mb-6 ${noPostulanteData.documento_estado === 'validado'
-              ? 'bg-green-50 border-green-200'
-              : noPostulanteData.documento_estado === 'rechazado'
-                ? 'bg-red-50 border-red-200'
+        {/* Alerta Gestión FUAS - con opción de subir comprobante */}
+        {gestionFUASData && (
+          <div className={`border rounded-lg p-4 mb-6 ${gestionFUASData.estado === 'documento_validado' || gestionFUASData.estado === 'acreditado'
+            ? 'bg-green-50 border-green-200'
+            : gestionFUASData.estado === 'documento_rechazado'
+              ? 'bg-red-50 border-red-200'
+              : gestionFUASData.estado === 'debe_acreditar'
+                ? 'bg-yellow-50 border-yellow-200'
                 : 'bg-orange-50 border-orange-200'
             }`}>
             <div className="flex items-start gap-3">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${noPostulanteData.documento_estado === 'validado'
-                  ? 'bg-green-100'
-                  : noPostulanteData.documento_estado === 'rechazado'
-                    ? 'bg-red-100'
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${gestionFUASData.estado === 'documento_validado' || gestionFUASData.estado === 'acreditado'
+                ? 'bg-green-100'
+                : gestionFUASData.estado === 'documento_rechazado'
+                  ? 'bg-red-100'
+                  : gestionFUASData.estado === 'debe_acreditar'
+                    ? 'bg-yellow-100'
                     : 'bg-orange-100'
                 }`}>
-                <span className={`text-lg ${noPostulanteData.documento_estado === 'validado'
-                    ? 'text-green-600'
-                    : noPostulanteData.documento_estado === 'rechazado'
-                      ? 'text-red-600'
+                <span className={`text-lg ${gestionFUASData.estado === 'documento_validado' || gestionFUASData.estado === 'acreditado'
+                  ? 'text-green-600'
+                  : gestionFUASData.estado === 'documento_rechazado'
+                    ? 'text-red-600'
+                    : gestionFUASData.estado === 'debe_acreditar'
+                      ? 'text-yellow-600'
                       : 'text-orange-600'
                   }`}>
-                  {noPostulanteData.documento_estado === 'validado' ? '✓' : '!'}
+                  {(gestionFUASData.estado === 'documento_validado' || gestionFUASData.estado === 'acreditado') ? '✓' : '!'}
                 </span>
               </div>
               <div className="flex-1">
-                {noPostulanteData.documento_estado === 'validado' ? (
+                {(gestionFUASData.estado === 'documento_validado' || gestionFUASData.estado === 'acreditado') ? (
                   <>
                     <h3 className="font-medium text-green-900">Comprobante validado</h3>
                     <p className="text-sm text-green-800 mt-1">
                       Tu comprobante de postulación FUAS ha sido validado correctamente.
                     </p>
                   </>
-                ) : noPostulanteData.documento_estado === 'rechazado' ? (
+                ) : gestionFUASData.estado === 'documento_rechazado' ? (
                   <>
                     <h3 className="font-medium text-red-900">Comprobante rechazado</h3>
                     <p className="text-sm text-red-800 mt-1">
-                      {noPostulanteData.comentario_rechazo || 'Tu comprobante fue rechazado. Por favor sube uno nuevo.'}
+                      {gestionFUASData.comentario_rechazo || 'Tu comprobante fue rechazado. Por favor sube uno nuevo.'}
+                    </p>
+                  </>
+                ) : gestionFUASData.estado === 'debe_acreditar' ? (
+                  <>
+                    <h3 className="font-medium text-yellow-900">Debes acreditar tu postulación FUAS</h3>
+                    <p className="text-sm text-yellow-800 mt-1">
+                      Tienes inconsistencias en tu postulación FUAS. Por favor agenda una cita con un asistente social para resolverlas.
+                    </p>
+                  </>
+                ) : gestionFUASData.estado === 'documento_pendiente' ? (
+                  <>
+                    <h3 className="font-medium text-orange-900">Comprobante en revisión</h3>
+                    <p className="text-sm text-orange-800 mt-1">
+                      Tu comprobante está siendo revisado por un asistente social.
                     </p>
                   </>
                 ) : (
                   <>
-                    <h3 className="font-medium text-orange-900">
-                      {noPostulanteData.documento_url ? 'Comprobante en revisión' : 'Debes subir comprobante de postulación FUAS'}
-                    </h3>
+                    <h3 className="font-medium text-orange-900">Debes subir comprobante de postulación FUAS</h3>
                     <p className="text-sm text-orange-800 mt-1">
-                      {noPostulanteData.documento_url
-                        ? 'Tu comprobante está siendo revisado por un asistente social.'
-                        : 'Nuestros registros indican que no has completado tu postulación FUAS. Si ya postulaste, sube el comprobante.'}
+                      Nuestros registros indican que no has completado tu postulación FUAS. Si ya postulaste, sube el comprobante.
                     </p>
                   </>
                 )}
 
-                {/* Mostrar upload si no tiene documento o fue rechazado */}
-                {(noPostulanteData.documento_estado !== 'validado' &&
-                  (noPostulanteData.documento_estado === 'rechazado' || !noPostulanteData.documento_url)) && (
-                    <div className="mt-4">
-                      {archivoComprobante ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-gray-700 truncate flex-1">
-                            📎 {archivoComprobante.name}
-                          </span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setArchivoComprobante(null)}
-                          >
-                            Cancelar
-                          </Button>
-                          <Button
-                            size="sm"
-                            loading={subiendoComprobante}
-                            onClick={async () => {
-                              if (!archivoComprobante || !user) return
+                {/* Mostrar upload si no tiene documento o fue rechazado (solo para no_postulo o rechazado) */}
+                {(gestionFUASData.estado === 'no_postulo' || gestionFUASData.estado === 'documento_rechazado') && (
+                  <div className="mt-4">
+                    {archivoComprobante ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-700 truncate flex-1">
+                          📎 {archivoComprobante.name}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setArchivoComprobante(null)}
+                        >
+                          Cancelar
+                        </Button>
+                        <Button
+                          size="sm"
+                          loading={subiendoComprobante}
+                          onClick={async () => {
+                            if (!archivoComprobante || !user) return
 
-                              setSubiendoComprobante(true)
-                              try {
-                                const resultado = await subirComprobanteFUAS(archivoComprobante, user.rut)
+                            setSubiendoComprobante(true)
+                            try {
+                              const resultado = await subirComprobanteFUAS(archivoComprobante, user.rut)
 
-                                if (!resultado.exitoso) {
-                                  toast.error(resultado.error || 'Error al subir documento')
-                                  return
-                                }
-
-                                // Actualizar en base de datos
-                                const { error } = await supabase
-                                  .from('no_postularon_fuas')
-                                  .update({
-                                    documento_url: resultado.url,
-                                    documento_estado: 'pendiente',
-                                    fecha_documento: new Date().toISOString(),
-                                    comentario_rechazo: null
-                                  })
-                                  .eq('rut', user.rut)
-
-                                if (error) {
-                                  toast.error('Error al guardar documento')
-                                  return
-                                }
-
-                                toast.exito('Comprobante subido correctamente')
-                                setArchivoComprobante(null)
-
-                                // Recargar datos
-                                const { data } = await supabase
-                                  .from('no_postularon_fuas')
-                                  .select('rut, documento_url, documento_estado, comentario_rechazo')
-                                  .eq('rut', user.rut)
-                                  .single()
-
-                                if (data) setNoPostulanteData(data)
-                              } catch (error) {
-                                console.error(error)
-                                toast.error('Error al subir comprobante')
-                              } finally {
-                                setSubiendoComprobante(false)
+                              if (!resultado.exitoso) {
+                                toast.error(resultado.error || 'Error al subir documento')
+                                return
                               }
-                            }}
-                          >
-                            Subir
-                          </Button>
-                        </div>
-                      ) : (
-                        <div>
-                          <input
-                            id="input-comprobante-fuas"
-                            type="file"
-                            accept=".pdf"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0]
-                              if (file) {
-                                const validacion = validarArchivoPDF(file)
-                                if (validacion.valido) {
-                                  setArchivoComprobante(file)
-                                } else {
-                                  toast.error(validacion.error || 'Archivo inválido')
-                                }
+
+                              // Actualizar en base de datos
+                              const { error } = await supabase
+                                .from('gestion_fuas')
+                                .update({
+                                  documento_url: resultado.url,
+                                  estado: 'documento_pendiente',
+                                  fecha_documento: new Date().toISOString(),
+                                  comentario_rechazo: null
+                                })
+                                .eq('rut', user.rut)
+
+                              if (error) {
+                                toast.error('Error al guardar documento')
+                                return
                               }
-                            }}
-                          />
-                          <Button
-                            size="sm"
-                            onClick={() => document.getElementById('input-comprobante-fuas')?.click()}
-                          >
-                            Seleccionar PDF
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  )}
+
+                              toast.exito('Comprobante subido correctamente')
+                              setArchivoComprobante(null)
+
+                              // Recargar datos
+                              const { data } = await supabase
+                                .from('gestion_fuas')
+                                .select('rut, estado, documento_url, comentario_rechazo')
+                                .eq('rut', user.rut)
+                                .single()
+
+                              if (data) setGestionFUASData(data)
+                            } catch (error) {
+                              console.error(error)
+                              toast.error('Error al subir comprobante')
+                            } finally {
+                              setSubiendoComprobante(false)
+                            }
+                          }}
+                        >
+                          Subir
+                        </Button>
+                      </div>
+                    ) : (
+                      <div>
+                        <input
+                          id="input-comprobante-fuas"
+                          type="file"
+                          accept=".pdf"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              const validacion = validarArchivoPDF(file)
+                              if (validacion.valido) {
+                                setArchivoComprobante(file)
+                              } else {
+                                toast.error(validacion.error || 'Archivo inválido')
+                              }
+                            }
+                          }}
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => document.getElementById('input-comprobante-fuas')?.click()}
+                        >
+                          Seleccionar PDF
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>

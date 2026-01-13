@@ -295,16 +295,17 @@ app.post('/api/cruzar-datos', async (req, res) => {
                 const datosInst = mapaInstituto.get(rutLimpio)
 
                 if (datosInst) {
-                    // Mapeo a columnas reales de la tabla estudiantes_fuas:
-                    // rut, correo, nombre, debe_postular, tipo_beneficio, carrera, origen, fecha_cruce
+                    // Mapeo a tabla unificada gestion_fuas
                     estudiantesFUAS.push({
                         rut: rutLimpio,
                         nombre: datosInst.nombre || '',
-                        correo: datosInst.correo || '',  // NOT NULL - requiere valor
+                        correo: datosInst.correo || '',
                         carrera: datosInst.carrera || null,
-                        origen: datosInst.sede || null,  // sede -> origen
-                        tipo_beneficio: datoMinisterio.tipo || datoMinisterio.formulario || null,  // formulario_ministerio -> tipo_beneficio
-                        debe_postular: true,
+                        sede: datosInst.sede || null,
+                        origen: 'acreditacion',
+                        estado: 'debe_acreditar',
+                        tipo_beneficio: datoMinisterio.tipo || datoMinisterio.formulario || null,
+                        notificacion_enviada: false,
                         fecha_cruce: new Date().toISOString()
                     })
                     coincidenciasCount++
@@ -326,7 +327,7 @@ app.post('/api/cruzar-datos', async (req, res) => {
             console.log(`Intentando guardar lote ${Math.floor(i / BATCH_SIZE_INSERT) + 1} (${lote.length} registros)...`)
 
             const { data: dataInsert, error: errorInsert } = await supabase
-                .from('estudiantes_fuas')
+                .from('gestion_fuas')
                 .upsert(lote, { onConflict: 'rut' })
                 .select()
 
@@ -506,6 +507,8 @@ app.post('/api/detectar-no-postulantes', async (req, res) => {
                     correo: est.correo || null,
                     carrera: est.carrera || null,
                     sede: est.sede || null,
+                    origen: 'fuas_nacional',
+                    estado: 'no_postulo',
                     notificacion_enviada: false,
                     fecha_notificacion: null,
                     fecha_cruce: new Date().toISOString()
@@ -515,7 +518,7 @@ app.post('/api/detectar-no-postulantes', async (req, res) => {
 
         console.log(`📋 Encontrados ${noPostularon.length} estudiantes que NO postularon`)
 
-        // Guardar en Supabase tabla no_postularon_fuas
+        // Guardar en Supabase tabla gestion_fuas
         const BATCH_SIZE = 500
         let totalGuardados = 0
         let erroresGuardado = []
@@ -524,7 +527,7 @@ app.post('/api/detectar-no-postulantes', async (req, res) => {
             const lote = noPostularon.slice(i, i + BATCH_SIZE)
 
             const { data: dataInsert, error: errorInsert } = await supabase
-                .from('no_postularon_fuas')
+                .from('gestion_fuas')
                 .upsert(lote, { onConflict: 'rut' })
                 .select()
 
@@ -569,8 +572,9 @@ app.post('/api/detectar-no-postulantes', async (req, res) => {
 app.get('/api/no-postulantes', async (req, res) => {
     try {
         const { data, error } = await supabase
-            .from('no_postularon_fuas')
+            .from('gestion_fuas')
             .select('*')
+            .eq('origen', 'fuas_nacional')
             .order('nombre', { ascending: true })
 
         if (error) {
@@ -607,7 +611,7 @@ app.post('/api/marcar-notificado-fuas', async (req, res) => {
         }
 
         const { error } = await supabase
-            .from('no_postularon_fuas')
+            .from('gestion_fuas')
             .update({
                 notificacion_enviada: true,
                 fecha_notificacion: new Date().toISOString()

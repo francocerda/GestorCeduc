@@ -251,23 +251,29 @@ export async function marcarNotificados(ruts: string[]): Promise<boolean> {
 }
 
 // ============================================
-// FUNCIONES PARA FUAS - NO POSTULANTES
+// FUNCIONES PARA GESTION FUAS (Tabla Unificada)
 // ============================================
 
-export interface NoPostulanteResult {
+export interface GestionFUASResult {
     rut: string
     nombre: string | null
     correo: string | null
     carrera: string | null
     sede: string | null
+    origen: 'acreditacion' | 'fuas_nacional'
+    estado: 'debe_acreditar' | 'no_postulo' | 'documento_pendiente' | 'documento_validado' | 'documento_rechazado' | 'acreditado'
+    tipo_beneficio: string | null
+    documento_url: string | null
+    fecha_documento: string | null
+    validado_por: string | null
+    comentario_rechazo: string | null
     notificacion_enviada: boolean
     fecha_notificacion: string | null
     fecha_cruce: string
-    // Campos de documento
-    documento_url: string | null
-    documento_estado: string | null
-    comentario_rechazo: string | null
 }
+
+// Alias para compatibilidad
+export type NoPostulanteResult = GestionFUASResult
 
 export interface ResultadoDeteccion {
     exitoso: boolean
@@ -275,7 +281,7 @@ export interface ResultadoDeteccion {
     totalPostulantes: number
     noPostularon: number
     guardados: number
-    estudiantes: NoPostulanteResult[]
+    estudiantes: GestionFUASResult[]
     mensaje: string
     error?: string
 }

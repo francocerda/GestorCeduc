@@ -115,7 +115,7 @@ export default function SocialWorkerPortal() {
     const [validandoDoc, setValidandoDoc] = useState(false)
 
     // Contador de documentos pendientes de validación
-    const docsPendientes = noPostulantes.filter(e => e.documento_url && e.documento_estado !== 'validado' && e.documento_estado !== 'rechazado').length
+    const docsPendientes = noPostulantes.filter(e => e.documento_url && e.estado === 'documento_pendiente').length
 
     // Filtrar no postulantes según búsqueda Y estado de documento
     const noPostulantesFiltrados = noPostulantes.filter(est => {
@@ -130,10 +130,10 @@ export default function SocialWorkerPortal() {
 
         // Filtro de estado documento
         switch (filtroDocumento) {
-            case 'sin_doc': return !est.documento_url
-            case 'pendiente': return est.documento_url && (!est.documento_estado || est.documento_estado === 'pendiente')
-            case 'validado': return est.documento_estado === 'validado'
-            case 'rechazado': return est.documento_estado === 'rechazado'
+            case 'sin_doc': return !est.documento_url && est.estado === 'no_postulo'
+            case 'pendiente': return est.estado === 'documento_pendiente'
+            case 'validado': return est.estado === 'documento_validado'
+            case 'rechazado': return est.estado === 'documento_rechazado'
             default: return true
         }
     })
@@ -1145,7 +1145,7 @@ export default function SocialWorkerPortal() {
                                                 : 'bg-white text-amber-600 border-amber-300 hover:border-amber-400'
                                                 }`}
                                         >
-                                            Por validar ({noPostulantes.filter(e => e.documento_url && (!e.documento_estado || e.documento_estado === 'pendiente')).length})
+                                            Por validar ({noPostulantes.filter(e => e.estado === 'documento_pendiente').length})
                                         </button>
                                         <button
                                             onClick={() => { setFiltroDocumento('validado'); setPaginaNP(1) }}
@@ -1154,7 +1154,7 @@ export default function SocialWorkerPortal() {
                                                 : 'bg-white text-green-600 border-green-300 hover:border-green-400'
                                                 }`}
                                         >
-                                            Validados ({noPostulantes.filter(e => e.documento_estado === 'validado').length})
+                                            Validados ({noPostulantes.filter(e => e.estado === 'documento_validado').length})
                                         </button>
                                         <button
                                             onClick={() => { setFiltroDocumento('rechazado'); setPaginaNP(1) }}
@@ -1163,7 +1163,7 @@ export default function SocialWorkerPortal() {
                                                 : 'bg-white text-red-600 border-red-300 hover:border-red-400'
                                                 }`}
                                         >
-                                            Rechazados ({noPostulantes.filter(e => e.documento_estado === 'rechazado').length})
+                                            Rechazados ({noPostulantes.filter(e => e.estado === 'documento_rechazado').length})
                                         </button>
                                     </div>
                                 </div>
@@ -1311,9 +1311,9 @@ export default function SocialWorkerPortal() {
                                                         <td className="py-3 px-3">
                                                             {est.documento_url ? (
                                                                 <div className="flex items-center gap-2">
-                                                                    {est.documento_estado === 'validado' ? (
+                                                                    {est.estado === 'documento_validado' ? (
                                                                         <Badge variant="success">Validado</Badge>
-                                                                    ) : est.documento_estado === 'rechazado' ? (
+                                                                    ) : est.estado === 'documento_rechazado' ? (
                                                                         <Badge variant="danger">Rechazado</Badge>
                                                                     ) : (
                                                                         <Button
@@ -1646,9 +1646,9 @@ export default function SocialWorkerPortal() {
                                     setValidandoDoc(true)
                                     try {
                                         const { error } = await supabase
-                                            .from('no_postularon_fuas')
+                                            .from('gestion_fuas')
                                             .update({
-                                                documento_estado: 'rechazado',
+                                                estado: 'documento_rechazado',
                                                 comentario_rechazo: comentario || 'Documento no válido'
                                             })
                                             .eq('rut', modalValidacion.rut)
@@ -1672,9 +1672,9 @@ export default function SocialWorkerPortal() {
                                     setValidandoDoc(true)
                                     try {
                                         const { error } = await supabase
-                                            .from('no_postularon_fuas')
+                                            .from('gestion_fuas')
                                             .update({
-                                                documento_estado: 'validado',
+                                                estado: 'documento_validado',
                                                 validado_por: user?.rut
                                             })
                                             .eq('rut', modalValidacion.rut)

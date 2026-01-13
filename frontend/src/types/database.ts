@@ -84,40 +84,34 @@ export interface DatosInstituto {
   cargado_por: string | null
 }
 
-export interface EstudianteFUAS {
-  rut: string
-  correo: string
-  nombre: string
-  debe_postular: boolean
-  tipo_beneficio: string | null
-  carrera: string | null
-  origen: string | null
-  fecha_cruce: string
-}
+// Tabla unificada gestion_fuas
+export type OrigenFUAS = 'acreditacion' | 'fuas_nacional'
+export type EstadoGestionFUAS =
+  | 'debe_acreditar'       // CSV Acreditación → necesita cita
+  | 'no_postulo'           // CSV FUAS Nacional → debe subir doc
+  | 'documento_pendiente'  // Subió doc, esperando validación
+  | 'documento_validado'   // Doc aprobado
+  | 'documento_rechazado'  // Doc rechazado, puede re-subir
+  | 'acreditado'           // Ya acreditó con asistente
 
-// Para INSERT: campos obligatorios + campos opcionales
-export type EstudianteInsert = Omit<Estudiante, 'creado_en' | 'actualizado_en'> & {
-  primer_ingreso?: string | null
-  ultimo_ingreso?: string | null
-  ha_agendado_cita?: boolean
-  fecha_ultima_cita?: string | null
-}
-
-// Para UPDATE: todo opcional excepto rut y creado_en
-export type EstudianteUpdate = Partial<Omit<Estudiante, 'rut' | 'creado_en'>>
-
-// Similar para Citas
-export type CitaInsert = Omit<Cita, 'id' | 'creado_en' | 'actualizado_en'>
-export type CitaUpdate = Partial<Omit<Cita, 'id' | 'creado_en'>>
-
-// Estudiantes que NO postularon a FUAS (nuevos)
-export interface NoPostuloFUAS {
+export interface GestionFUAS {
   rut: string
   nombre: string | null
   correo: string | null
   carrera: string | null
   sede: string | null
+  origen: OrigenFUAS
+  estado: EstadoGestionFUAS
+  tipo_beneficio: string | null
+  documento_url: string | null
+  fecha_documento: string | null
+  validado_por: string | null
+  comentario_rechazo: string | null
   notificacion_enviada: boolean
   fecha_notificacion: string | null
   fecha_cruce: string
 }
+
+// Alias para compatibilidad temporal
+export type EstudianteFUAS = GestionFUAS
+export type NoPostuloFUAS = GestionFUAS
