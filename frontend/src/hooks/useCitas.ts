@@ -1,6 +1,10 @@
 import { useState, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
-import type { Cita, CitaInsert, CitaUpdate, EstadoCita, AsistenteSocial } from '../types/database'
+import { api } from '../lib/api'
+import type { Cita, EstadoCita, AsistenteSocial } from '../types/database'
+
+// Tipos parciales simulados ya que la DB no exporta Insert/Update directos a veces
+type CitaInsert = Partial<Cita>
+type CitaUpdate = Partial<Cita>
 
 interface CitaConAsistente extends Cita {
     asistentes_sociales: Pick<AsistenteSocial, 'nombre' | 'correo'> | null
@@ -24,17 +28,8 @@ export function useCitas() {
         setError(null)
 
         try {
-            const { data, error: errorConsulta } = await supabase
-                .from('citas')
-                .select(`
-          *,
-          asistentes_sociales (nombre, correo)
-        `)
-                .eq('rut_estudiante', rut)
-                .order('inicio', { ascending: true })
-
-            if (errorConsulta) throw errorConsulta
-            return data || []
+            const data = await api.getCitasEstudiante(rut)
+            return data as CitaConAsistente[]
         } catch (err) {
             const mensaje = err instanceof Error ? err.message : 'Error al cargar citas'
             setError(mensaje)
@@ -51,17 +46,8 @@ export function useCitas() {
         setError(null)
 
         try {
-            const { data, error: errorConsulta } = await supabase
-                .from('citas')
-                .select(`
-          *,
-          estudiantes (nombre, correo, rut)
-        `)
-                .eq('rut_asistente', rut)
-                .order('inicio', { ascending: true })
-
-            if (errorConsulta) throw errorConsulta
-            return data || []
+            const data = await api.getCitasAsistente(rut)
+            return data as CitaConEstudiante[]
         } catch (err) {
             const mensaje = err instanceof Error ? err.message : 'Error al cargar citas'
             setError(mensaje)
@@ -77,24 +63,9 @@ export function useCitas() {
         setCargando(true)
         setError(null)
 
-        const hoy = new Date()
-        const inicioDia = new Date(hoy.setHours(0, 0, 0, 0)).toISOString()
-        const finDia = new Date(hoy.setHours(23, 59, 59, 999)).toISOString()
-
         try {
-            const { data, error: errorConsulta } = await supabase
-                .from('citas')
-                .select(`
-          *,
-          estudiantes (nombre, correo, rut)
-        `)
-                .eq('rut_asistente', rutAsistente)
-                .gte('inicio', inicioDia)
-                .lte('inicio', finDia)
-                .order('inicio', { ascending: true })
-
-            if (errorConsulta) throw errorConsulta
-            return data || []
+            const data = await api.getCitasHoyAsistente(rutAsistente)
+            return data as CitaConEstudiante[]
         } catch (err) {
             const mensaje = err instanceof Error ? err.message : 'Error al cargar citas de hoy'
             setError(mensaje)
@@ -110,13 +81,7 @@ export function useCitas() {
         setError(null)
 
         try {
-            const { data, error: errorInsertar } = await supabase
-                .from('citas')
-                .insert(datosCita)
-                .select()
-                .single()
-
-            if (errorInsertar) throw errorInsertar
+            const data = await api.crearCita(datosCita)
             console.log('✅ Cita creada:', data)
             return data
         } catch (err) {
@@ -135,12 +100,8 @@ export function useCitas() {
         setError(null)
 
         try {
-            const { error: errorActualizar } = await supabase
-                .from('citas')
-                .update(cambios)
-                .eq('id', id)
-
-            if (errorActualizar) throw errorActualizar
+            const exito = await api.updateCita(id, cambios)
+            if (!exito) throw new Error('Error al actualizar')
             console.log('✅ Cita actualizada:', id)
             return true
         } catch (err) {
@@ -155,8 +116,19 @@ export function useCitas() {
 
     // Cancelar una cita
     const cancelarCita = useCallback(async (id: string): Promise<boolean> => {
-        return actualizarCita(id, { estado: 'cancelada' as EstadoCita })
-    }, [actualizarCita])
+        setCargando(true)
+        try {
+            const exito = await api.cancelarCita(id)
+            if (!exito) throw new Error('Error al cancelar')
+            return true
+        } catch (err) {
+            const mensaje = err instanceof Error ? err.message : 'Error al cancelar cita'
+            setError(mensaje)
+            return false
+        } finally {
+            setCargando(false)
+        }
+    }, [])
 
     // Cambiar estado de una cita
     const cambiarEstadoCita = useCallback(async (id: string, nuevoEstado: EstadoCita): Promise<boolean> => {
@@ -173,17 +145,14 @@ export function useCitas() {
         setError(null)
 
         try {
-            const { error: errorActualizar } = await supabase
-                .from('citas')
-                .update({
-                    estado: 'completada' as EstadoCita,
-                    descripcion_sesion: descripcionSesion,
-                    documento_url: documentoUrl,
-                    fecha_documento: new Date().toISOString()
-                })
-                .eq('id', id)
+            const exito = await api.updateCita(id, {
+                estado: 'completada' as EstadoCita,
+                descripcion_sesion: descripcionSesion, // Validar que api.updateCita acepte esto, pero server.js es generico
+                documento_url: documentoUrl,
+                fecha_documento: new Date().toISOString()
+            } as any) // Cast as any si la interfaz Cita no tiene estos campos opcionales aun
 
-            if (errorActualizar) throw errorActualizar
+            if (!exito) throw new Error('Error al actualizar')
             console.log('✅ Cita completada con documento:', id)
             return true
         } catch (err) {
@@ -203,16 +172,8 @@ export function useCitas() {
         fechaFin: string
     ): Promise<Cita[]> => {
         try {
-            const { data, error: errorConsulta } = await supabase
-                .from('citas')
-                .select('*')
-                .eq('rut_asistente', rutAsistente)
-                .neq('estado', 'cancelada')
-                .gte('inicio', fechaInicio)
-                .lte('inicio', fechaFin)
-
-            if (errorConsulta) throw errorConsulta
-            return data || []
+            const data = await api.getCitasRango(rutAsistente, fechaInicio, fechaFin)
+            return data
         } catch (err) {
             console.error('❌ Error al obtener citas en rango:', err)
             return []

@@ -11,6 +11,9 @@ CONTEXTO_SESION.md
 .env.local
 .env.production
 *.env
+frontend/.env
+frontend/.env.local
+frontend/.env.production
 
 
 .DS_Store

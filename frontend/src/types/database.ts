@@ -24,6 +24,9 @@ export interface Estudiante {
   actualizado_en: string
 }
 
+// Tipo para insertar estudiantes (sin campos auto-generados)
+export type EstudianteInsert = Omit<Estudiante, 'creado_en' | 'actualizado_en'>
+
 export interface AsistenteSocial {
   rut: string
   correo: string
@@ -63,6 +66,9 @@ export interface Cita {
 }
 
 export type EstadoCita = 'pendiente' | 'confirmada' | 'completada' | 'cancelada'
+
+// Tipo para insertar citas (sin campos auto-generados)
+export type CitaInsert = Omit<Cita, 'id' | 'creado_en' | 'actualizado_en'>
 
 export interface DatosMinisterio {
   rut: string

@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useStudents } from '../hooks/useStudents'
 import { useCitas } from '../hooks/useCitas'
 import { useToast } from '../components/ui/Toast'
-import { supabase } from '../lib/supabase'
+import { api } from '../lib/api'
 import { enviarNotificacionesMasivas, enviarRecordatoriosMasivosFUAS } from '../lib/emailService'
 import { parsearCSVMinisterio, leerArchivoComoTexto, validarArchivoCSV, type ResultadoParseCSV } from '../lib/csvParserAcreditacion'
 import { parsearCSVPostulantesFUAS, validarArchivoCSVFUAS, type ResultadoParseFUAS } from '../lib/csvParserFUAS'
@@ -239,10 +239,7 @@ export default function SocialWorkerPortal() {
 
             if (resultado.exitosos > 0) {
                 const rutsExitosos = estudiantesAEnviar.slice(0, resultado.exitosos).map(e => e.rut)
-                await supabase
-                    .from('estudiantes')
-                    .update({ notificacion_enviada: true, fecha_notificacion: new Date().toISOString() })
-                    .in('rut', rutsExitosos)
+                await api.notificarEstudiantesTabla(rutsExitosos)
 
                 const estudiantesData = await fetchEstudiantes({ limite: 50, debePostular: true })
                 setEstudiantes(estudiantesData)
@@ -350,20 +347,16 @@ export default function SocialWorkerPortal() {
             // Si no hay en estudiantes_fuas, consultar directamente datos_ministerio + datos_instituto
             toast.info('Buscando en datos del ministerio...')
 
-            // Obtener datos del ministerio
-            const { data: datosMinisterio, error: errorMin } = await supabase
-                .from('datos_ministerio')
-                .select('rut, tipo, beneficio')
+            // Obtener datos del ministerio y del instituto via API
+            const [datosMinisterio, datosInstituto] = await Promise.all([
+                api.getDatosMinisterio(),
+                api.getDatosInstituto()
+            ])
 
-            if (errorMin || !datosMinisterio || datosMinisterio.length === 0) {
+            if (!datosMinisterio || datosMinisterio.length === 0) {
                 toast.advertencia('No hay datos del ministerio cargados')
                 return
             }
-
-            // Obtener datos del instituto
-            const { data: datosInstituto } = await supabase
-                .from('datos_instituto')
-                .select('rut, nombre, correo, carrera, sede')
 
             // Crear mapa de instituto por RUT
             const mapaInstituto = new Map()
@@ -1556,17 +1549,14 @@ export default function SocialWorkerPortal() {
                                         }
 
                                         // Actualizar cita en DB con estado, descripción y documento
-                                        const { error: errorUpdate } = await supabase
-                                            .from('citas')
-                                            .update({
-                                                estado: 'completada',
-                                                descripcion_sesion: descripcionSesion,
-                                                documento_url: resultadoUpload.url,
-                                                fecha_documento: new Date().toISOString()
-                                            })
-                                            .eq('id', citaSeleccionada.id)
+                                        const exitoUpdate = await api.updateCita(citaSeleccionada.id, {
+                                            estado: 'completada',
+                                            descripcion_sesion: descripcionSesion,
+                                            documento_url: resultadoUpload.url,
+                                            fecha_documento: new Date().toISOString()
+                                        } as any)
 
-                                        if (errorUpdate) {
+                                        if (!exitoUpdate) {
                                             toast.error('Error al actualizar cita')
                                             return
                                         }
@@ -1645,15 +1635,13 @@ export default function SocialWorkerPortal() {
 
                                     setValidandoDoc(true)
                                     try {
-                                        const { error } = await supabase
-                                            .from('gestion_fuas')
-                                            .update({
-                                                estado: 'documento_rechazado',
-                                                comentario_rechazo: comentario || 'Documento no válido'
-                                            })
-                                            .eq('rut', modalValidacion.rut)
+                                        const resultado = await api.validarDocumento(
+                                            modalValidacion.rut,
+                                            false,
+                                            comentario || 'Documento no válido'
+                                        )
 
-                                        if (!error) {
+                                        if (resultado.exitoso) {
                                             toast.advertencia('Documento rechazado')
                                             setModalValidacion(null)
                                             const res = await getNoPostulantes()
@@ -1671,15 +1659,14 @@ export default function SocialWorkerPortal() {
                                 onClick={async () => {
                                     setValidandoDoc(true)
                                     try {
-                                        const { error } = await supabase
-                                            .from('gestion_fuas')
-                                            .update({
-                                                estado: 'documento_validado',
-                                                validado_por: user?.rut
-                                            })
-                                            .eq('rut', modalValidacion.rut)
+                                        const resultado = await api.validarDocumento(
+                                            modalValidacion.rut,
+                                            true,
+                                            undefined,
+                                            user?.rut
+                                        )
 
-                                        if (!error) {
+                                        if (resultado.exitoso) {
                                             toast.exito('Documento validado')
                                             setModalValidacion(null)
                                             const res = await getNoPostulantes()

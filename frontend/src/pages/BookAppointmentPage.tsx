@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useCitas } from '../hooks/useCitas'
 import { useAsistentesSociales } from '../hooks/useStudents'
-import { supabase } from '../lib/supabase'
+import { api } from '../lib/api'
 import { formatDateLong, toUTC } from '../lib/dateUtils'
 import type { AsistenteSocial, Cita, CitaInsert } from '../types/database'
 import Card from '../components/ui/Card'
@@ -69,28 +69,13 @@ export default function BookAppointmentPage() {
                 return
             }
 
-            // Get start and end of the week for selected date
-            const [year, month, day] = selectedDate.split('-').map(Number)
-            const dateObj = new Date(year, month - 1, day)
-
-            const startOfWeek = new Date(dateObj)
-            startOfWeek.setDate(dateObj.getDate() - dateObj.getDay() + 1) // Monday
-            startOfWeek.setHours(0, 0, 0, 0)
-
-            const endOfWeek = new Date(startOfWeek)
-            endOfWeek.setDate(startOfWeek.getDate() + 6) // Sunday
-            endOfWeek.setHours(23, 59, 59, 999)
-
-            // Check if student has any active appointment in this week
-            const { data } = await supabase
-                .from('citas')
-                .select('id')
-                .eq('rut_estudiante', user.rut)
-                .neq('estado', 'cancelada')
-                .gte('inicio', startOfWeek.toISOString())
-                .lte('inicio', endOfWeek.toISOString())
-
-            setHasAppointmentThisWeek((data?.length || 0) > 0)
+            try {
+                const resultado = await api.verificarCitaSemana(user.rut, selectedDate)
+                setHasAppointmentThisWeek(resultado.tieneCita)
+            } catch (error) {
+                console.error('Error verificando cita semanal:', error)
+                setHasAppointmentThisWeek(false)
+            }
         }
         verificarCitaSemana()
     }, [user, selectedDate])

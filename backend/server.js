@@ -1,11 +1,6 @@
 /**
  * Backend GestorCeduc - Servidor Express
- * 
- * Endpoints:
- * - GET  /health                    → Health check
- * - GET  /api/sync-instituto        → Sincroniza estudiantes desde SQL Server a Supabase
- * - POST /api/cruzar-datos          → Cruza datos del Ministerio con datos del Instituto
- * - GET  /api/estudiantes-pendientes → Lista estudiantes que deben postular
+ * Migrado a PostgreSQL Local
  */
 
 require('dotenv').config()
@@ -13,7 +8,7 @@ require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 const sql = require('mssql')
-const { createClient } = require('@supabase/supabase-js')
+const pool = require('./db/pool')
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -26,20 +21,14 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ limit: '50mb', extended: true }))
 
-// Inicializar Supabase con Service Key 
-const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY
-)
-
-// Configuración SQL Server
+// Configuración SQL Server (Legacy)
 const sqlConfig = {
     user: process.env.SQL_USER,
     password: process.env.SQL_PASSWORD,
     server: process.env.SQL_SERVER,
     database: process.env.SQL_DATABASE || 'master',
     options: {
-        encrypt: false, // Deshabilitado para servidores SQL Server antiguos
+        encrypt: false,
         trustServerCertificate: true,
         enableArithAbort: true
     },
@@ -48,638 +37,694 @@ const sqlConfig = {
 }
 
 // ============================================
-// HEALTH CHECK
+// HELPERS DB
 // ============================================
+
+function buildUpsertQuery(table, columns, values, conflictTarget, updateColumns) {
+    if (values.length === 0) return null;
+    const rowPlaceholders = values.map((_, rowIndex) =>
+        `(${columns.map((_, colIndex) => `$${rowIndex * columns.length + colIndex + 1}`).join(', ')})`
+    ).join(', ');
+    const flatValues = values.flat();
+    let query = `INSERT INTO ${table} (${columns.join(', ')}) VALUES ${rowPlaceholders}`;
+    if (conflictTarget) {
+        query += ` ON CONFLICT (${conflictTarget}) DO UPDATE SET `;
+        query += updateColumns.map(col => `${col} = EXCLUDED.${col}`).join(', ');
+    }
+    return { text: query, values: flatValues };
+}
+
+function limpiarRut(rut) {
+    if (!rut) return ''
+    let val = String(rut)
+    if (val.includes('-')) val = val.split('-')[0]
+    return val.replace(/[^0-9kK]/g, '')
+}
+
+// ============================================
+// ENDPOINTS
+// ============================================
+
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
+        db: 'postgresql',
         environment: process.env.NODE_ENV || 'development'
     })
 })
 
-// ============================================
-// SINCRONIZAR ESTUDIANTES DESDE SQL SERVER
-// ============================================
+// Sincronizar Instituto
 app.get('/api/sync-instituto', async (req, res) => {
-    let pool = null
+    let mssqlPool = null
+    const client = await pool.connect();
 
     try {
         console.log('Conectando a SQL Server...')
-        pool = await sql.connect(sqlConfig)
-
-        console.log('Ejecutando consulta ESTUDIANTES_MAT 2026...')
-        const result = await pool.request().query('exec [ESTUDIANTES_MAT] 2026')
-
+        mssqlPool = await sql.connect(sqlConfig)
+        const result = await mssqlPool.request().query('exec [ESTUDIANTES_MAT] 2026')
         const estudiantes = result.recordset
+
         console.log(`${estudiantes.length} estudiantes encontrados en SQL Server`)
 
-        // 🔍 DIAGNÓSTICO: Mostrar formato de RUT recibido de SQL Server
-        console.log('=== MUESTRA DE RUTS DESDE SQL SERVER ===')
-        estudiantes.slice(0, 5).forEach((est, i) => {
-            console.log(`  [${i + 1}] RUT crudo: "${est.rut}" | Columnas disponibles: ${Object.keys(est).join(', ')}`)
-        })
-        console.log('=========================================')
-
         if (estudiantes.length === 0) {
-            return res.json({
-                exitoso: true,
-                total: 0,
-                mensaje: 'No se encontraron estudiantes matriculados para 2026'
-            })
+            return res.json({ exitoso: true, total: 0, mensaje: 'No se encontraron estudiantes' })
         }
 
-        // Preparar datos para Supabase
-        // Mapeo de columnas SQL Server → Supabase
-        const datosParaSupabase = estudiantes.map(est => {
-            // Construir nombre completo desde las partes
+        const datosParaInsertar = estudiantes.map(est => {
             const nombreCompleto = [
                 est.nombres_socionegocio,
                 est.apaterno_socionegocio,
                 est.amaterno_socionegocio
             ].filter(Boolean).join(' ').trim()
 
-            return {
-                rut: limpiarRut(est.rut),
-                nombre: nombreCompleto || null,
-                correo: est.Correo || null,  // Nota: "Correo" con mayúscula
-                carrera: est.nombre_carrera || null,
-                sede: est.CODSEDE || null,
-                anio_ingreso: est.anio_ingreso || 2026,
-                fecha_carga: new Date().toISOString()
-            }
-        })
+            return [
+                limpiarRut(est.rut),
+                nombreCompleto || null,
+                est.Correo || null,
+                est.nombre_carrera || null,
+                est.CODSEDE || null,
+                est.anio_ingreso || 2026,
+                new Date()
+            ]
+        }).filter(row => row[0]);
 
-        console.log('Guardando en Supabase tabla datos_instituto...')
-
-        // Upsert en lotes de 500
-        const batchSize = 500
+        console.log('Guardando en PostgreSQL datos_instituto...')
+        const BATCH_SIZE = 500
         let insertados = 0
-        let erroresDb = []
 
-        for (let i = 0; i < datosParaSupabase.length; i += batchSize) {
-            const batch = datosParaSupabase.slice(i, i + batchSize)
+        await client.query('BEGIN');
 
-            const { error } = await supabase
-                .from('datos_instituto')
-                .upsert(batch, { onConflict: 'rut' })
+        for (let i = 0; i < datosParaInsertar.length; i += BATCH_SIZE) {
+            const batch = datosParaInsertar.slice(i, i + BATCH_SIZE)
+            const query = buildUpsertQuery(
+                'datos_instituto',
+                ['rut', 'nombre', 'correo', 'carrera', 'sede', 'anio_ingreso', 'fecha_carga'],
+                batch,
+                'rut',
+                ['nombre', 'correo', 'carrera', 'sede', 'anio_ingreso', 'fecha_carga']
+            )
 
-            if (error) {
-                console.error(`Error en batch ${i / batchSize + 1}:`, error)
-                erroresDb.push(error.message)
-            } else {
+            if (query) {
+                await client.query(query.text, query.values)
                 insertados += batch.length
             }
         }
 
-        console.log(`Sincronización completada: ${insertados} registros`)
+        await client.query('COMMIT');
 
         res.json({
             exitoso: true,
             total: insertados,
-            errores: erroresDb,
             mensaje: `${insertados} estudiantes sincronizados correctamente`
         })
 
     } catch (error) {
-        console.error(' Error en sincronización:', error)
-        res.status(500).json({
-            exitoso: false,
-            error: error.message,
-            mensaje: 'Error al sincronizar con SQL Server'
-        })
+        await client.query('ROLLBACK');
+        console.error('Error sincronización:', error)
+        res.status(500).json({ exitoso: false, error: error.message })
     } finally {
-        if (pool) {
-            await pool.close()
-        }
+        client.release();
+        if (mssqlPool) await mssqlPool.close()
     }
 })
 
-// ============================================
-// CARGAR DATOS DEL MINISTERIO (BULK INSERT)
-// ============================================
+// Cargar Datos Ministerio
 app.post('/api/cargar-datos-ministerio', async (req, res) => {
+    const client = await pool.connect();
     try {
         const { datos } = req.body
+        if (!datos?.length) return res.status(400).json({ error: 'Datos requeridos' })
 
-        if (!datos || !Array.isArray(datos)) {
-            return res.status(400).json({
-                exitoso: false,
-                error: 'Se requiere un array de datos'
-            })
-        }
+        const datosParaInsertar = datos.map(d => [
+            limpiarRut(d.rut),
+            d.nombre || null,
+            d.tipo || null,
+            d.beneficio || d.observacion || null,
+            new Date(),
+            d.cargado_por || null
+        ]).filter(row => row[0]);
 
-        console.log(`📊 Cargando ${datos.length} registros del Ministerio...`)
+        console.log(`Cargando ${datosParaInsertar.length} registros ministerio...`)
 
-        // Preparar datos para insertar
-        const datosParaInsertar = datos.map(d => ({
-            rut: limpiarRut(d.rut),
-            nombre: d.nombre || null,
-            tipo: d.tipo || null,
-            beneficio: d.beneficio || d.observacion || null,
-            fecha_carga: new Date().toISOString(),
-            cargado_por: d.cargado_por || null
-        }))
+        await client.query('BEGIN');
 
-        // Insertar en lotes de 1000 (más eficiente que frontend)
         const BATCH_SIZE = 1000
-        let totalGuardados = 0
-        let erroresGuardado = []
-
         for (let i = 0; i < datosParaInsertar.length; i += BATCH_SIZE) {
-            const lote = datosParaInsertar.slice(i, i + BATCH_SIZE)
-            const loteNum = Math.floor(i / BATCH_SIZE) + 1
-
-            const { data, error } = await supabase
-                .from('datos_ministerio')
-                .upsert(lote, { onConflict: 'rut' })
-                .select()
-
-            if (error) {
-                console.error(`❌ Error lote ${loteNum}:`, error.message)
-                erroresGuardado.push({
-                    lote: loteNum,
-                    error: error.message
-                })
-            } else {
-                totalGuardados += data?.length || lote.length
-            }
+            const batch = datosParaInsertar.slice(i, i + BATCH_SIZE)
+            const query = buildUpsertQuery(
+                'datos_ministerio',
+                ['rut', 'nombre', 'tipo', 'beneficio', 'fecha_carga', 'cargado_por'],
+                batch,
+                'rut',
+                ['nombre', 'tipo', 'beneficio', 'fecha_carga', 'cargado_por']
+            )
+            if (query) await client.query(query.text, query.values)
         }
 
-        console.log(`✓ Guardados: ${totalGuardados}/${datosParaInsertar.length}`)
-
-        res.json({
-            exitoso: erroresGuardado.length === 0,
-            totalRecibidos: datos.length,
-            totalGuardados,
-            errores: erroresGuardado,
-            mensaje: erroresGuardado.length === 0
-                ? `${totalGuardados} registros cargados exitosamente`
-                : `${totalGuardados} guardados, ${erroresGuardado.length} lote(s) con error`
-        })
-
-    } catch (error) {
-        console.error('❌ Error cargando datos ministerio:', error)
-        res.status(500).json({
-            exitoso: false,
-            error: error.message,
-            mensaje: 'Error al cargar datos del ministerio'
-        })
-    }
-})
-
-// ============================================
-// CRUZAR DATOS DEL MINISTERIO CON INSTITUTO
-// ============================================
-app.post('/api/cruzar-datos', async (req, res) => {
-    try {
-        const { datos_ministerio } = req.body
-
-        if (!datos_ministerio || !Array.isArray(datos_ministerio)) {
-            return res.status(400).json({
-                exitoso: false,
-                error: 'Se requiere un array de datos_ministerio'
-            })
-        }
-
-        console.log(`Procesando ${datos_ministerio.length} registros del Ministerio...`)
-
-        // ESTRATEGIA OPTIMIZADA:
-        // En lugar de enviar 144k RUTs en un "IN (...) " que rompe la base de datos,
-        // traemos todos los estudiantes del instituto a memoria y cruzamos aquí.
-
-        console.log('Obteniendo datos del instituto para cruce en memoria...')
-
-        // Obtener TODOS los estudiantes del instituto
-        // Nota: Supabase devuelve max 1000 por defecto. Usamos limit alto o paginación si crece mucho.
-        let todosEstudiantesInstituto = []
-        let page = 0
-        const pageSize = 1000
-        let more = true
-
-        while (more) {
-            const { data, error } = await supabase
-                .from('datos_instituto')
-                .select('*')
-                .range(page * pageSize, (page + 1) * pageSize - 1)
-
-            if (error) throw new Error(`Error leyendo instituto: ${error.message}`)
-
-            if (data.length > 0) {
-                todosEstudiantesInstituto = todosEstudiantesInstituto.concat(data)
-                page++
-                // Si trajimos menos que el tamaño de página, se acabaron
-                if (data.length < pageSize) more = false
-            } else {
-                more = false
-            }
-        }
-
-        console.log(`Instituto cargado: ${todosEstudiantesInstituto.length} registros. Procesando CSV...`)
-
-        // Crear mapa de datos del instituto por RUT para búsqueda O(1)
-        const mapaInstituto = new Map()
-        todosEstudiantesInstituto.forEach(est => {
-            if (est.rut) mapaInstituto.set(est.rut, est)
-        })
-
-        // Preparar datos para estudiantes_fuas (solo los que coinciden)
-        const estudiantesFUAS = []
-        let coincidenciasCount = 0
-
-        datos_ministerio.forEach((datoMinisterio, idx) => {
-            try {
-                if (!datoMinisterio.rut) return
-
-                const rutLimpio = limpiarRut(datoMinisterio.rut)
-                const datosInst = mapaInstituto.get(rutLimpio)
-
-                if (datosInst) {
-                    // Mapeo a tabla unificada gestion_fuas
-                    estudiantesFUAS.push({
-                        rut: rutLimpio,
-                        nombre: datosInst.nombre || '',
-                        correo: datosInst.correo || '',
-                        carrera: datosInst.carrera || null,
-                        sede: datosInst.sede || null,
-                        origen: 'acreditacion',
-                        estado: 'debe_acreditar',
-                        tipo_beneficio: datoMinisterio.tipo || datoMinisterio.formulario || null,
-                        notificacion_enviada: false,
-                        fecha_cruce: new Date().toISOString()
-                    })
-                    coincidenciasCount++
-                }
-            } catch (errLoop) {
-                console.warn(`Error procesando fila CSV ${idx}:`, errLoop)
-            }
-        })
-
-        console.log(`Cruce terminado. Encontrados: ${estudiantesFUAS.length}. Guardando en Supabase...`)
-
-        // Guardar en Supabase por lotes para evitar error 413/Timeout en BD
-        const BATCH_SIZE_INSERT = 500
-        let totalGuardados = 0
-        let erroresGuardado = []
-
-        for (let i = 0; i < estudiantesFUAS.length; i += BATCH_SIZE_INSERT) {
-            const lote = estudiantesFUAS.slice(i, i + BATCH_SIZE_INSERT)
-            console.log(`Intentando guardar lote ${Math.floor(i / BATCH_SIZE_INSERT) + 1} (${lote.length} registros)...`)
-
-            const { data: dataInsert, error: errorInsert } = await supabase
-                .from('gestion_fuas')
-                .upsert(lote, { onConflict: 'rut' })
-                .select()
-
-            if (errorInsert) {
-                console.error(`❌ Error guardando lote ${i}:`, errorInsert.message, errorInsert.details, errorInsert.hint)
-                erroresGuardado.push({
-                    lote: Math.floor(i / BATCH_SIZE_INSERT) + 1,
-                    error: errorInsert.message,
-                    details: errorInsert.details || null,
-                    hint: errorInsert.hint || null
-                })
-            } else {
-                const guardados = dataInsert?.length || lote.length
-                totalGuardados += guardados
-                console.log(`✓ Guardado lote ${i} - ${i + lote.length} (${guardados} registros)`)
-            }
-        }
-
-        console.log(`Proceso finalizado. Guardados: ${totalGuardados}/${estudiantesFUAS.length}`)
-
-        if (erroresGuardado.length > 0) {
-            console.error('Errores detectados al guardar:', JSON.stringify(erroresGuardado, null, 2))
-        }
-
-        res.json({
-            exitoso: erroresGuardado.length === 0,
-            coincidencias: estudiantesFUAS.length,
-            guardados: totalGuardados,
-            erroresGuardado: erroresGuardado,
-            noEncontrados: datos_ministerio.length - estudiantesFUAS.length,
-            estudiantes: estudiantesFUAS,
-            mensaje: erroresGuardado.length === 0
-                ? `${estudiantesFUAS.length} estudiantes encontrados y guardados correctamente`
-                : `${estudiantesFUAS.length} encontrados, ${totalGuardados} guardados. ${erroresGuardado.length} lote(s) con error.`
-        })
-
-    } catch (error) {
-        console.error('Error en cruce de datos:', error)
-        res.status(500).json({
-            exitoso: false,
-            error: error.message,
-            mensaje: 'Error al cruzar datos'
-        })
-    }
-})
-
-// ============================================
-// OBTENER ESTUDIANTES PENDIENTES
-// ============================================
-app.get('/api/estudiantes-pendientes', async (req, res) => {
-    try {
-        const { data, error } = await supabase
-            .from('estudiantes_fuas')
-            .select('*')
-            .eq('debe_postular', true)
-            .order('nombre', { ascending: true })
-
-        if (error) {
-            throw new Error(`Error consultando Supabase: ${error.message}`)
-        }
+        await client.query('COMMIT');
 
         res.json({
             exitoso: true,
-            total: data.length,
-            estudiantes: data
+            totalGuardados: datosParaInsertar.length,
+            mensaje: 'Carga completada exitosamente'
         })
-
     } catch (error) {
-        console.error('Error obteniendo estudiantes pendientes:', error)
-        res.status(500).json({
-            exitoso: false,
-            error: error.message
-        })
+        await client.query('ROLLBACK');
+        console.error('Error carga ministerio:', error)
+        res.status(500).json({ exitoso: false, error: error.message })
+    } finally {
+        client.release();
     }
 })
 
-// ============================================
-// MARCAR NOTIFICACIÓN ENVIADA
-// ============================================
+// Cruzar Datos
+app.post('/api/cruzar-datos', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { datos_ministerio } = req.body
+        if (!datos_ministerio?.length) return res.status(400).json({ error: 'Datos requeridos' })
+
+        console.log('Obteniendo datos instituto...')
+        const { rows: estudiantesInst } = await client.query('SELECT * FROM datos_instituto');
+
+        const mapaInstituto = new Map(estudiantesInst.map(e => [e.rut, e]));
+        const estudiantesFUAS = [];
+
+        datos_ministerio.forEach(dm => {
+            const rut = limpiarRut(dm.rut);
+            const inst = mapaInstituto.get(rut);
+            if (inst) {
+                estudiantesFUAS.push([
+                    rut,
+                    inst.nombre || '',
+                    inst.correo || '',
+                    inst.carrera,
+                    inst.sede,
+                    'acreditacion',
+                    'debe_acreditar',
+                    dm.tipo || dm.formulario || null,
+                    false, // notificacion_enviada
+                    new Date() // fecha_cruce
+                ])
+            }
+        });
+
+        console.log(`Guardando ${estudiantesFUAS.length} cruces en gestion_fuas...`)
+
+        await client.query('BEGIN');
+
+        const BATCH_SIZE = 500
+        for (let i = 0; i < estudiantesFUAS.length; i += BATCH_SIZE) {
+            const batch = estudiantesFUAS.slice(i, i + BATCH_SIZE)
+            const query = buildUpsertQuery(
+                'gestion_fuas',
+                ['rut', 'nombre', 'correo', 'carrera', 'sede', 'origen', 'estado', 'tipo_beneficio', 'notificacion_enviada', 'fecha_cruce'],
+                batch,
+                'rut',
+                ['nombre', 'correo', 'carrera', 'sede', 'origen', 'estado', 'tipo_beneficio', 'fecha_cruce']
+            )
+            if (query) await client.query(query.text, query.values)
+        }
+
+        await client.query('COMMIT');
+
+        res.json({
+            exitoso: true,
+            coincidencias: estudiantesFUAS.length,
+            estudiantes: estudiantesFUAS.map(row => ({ rut: row[0], nombre: row[1], estado: row[6] }))
+        })
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error crossing data:', error)
+        res.status(500).json({ exitoso: false, error: error.message })
+    } finally {
+        client.release();
+    }
+})
+
+// Listar Pendientes
+app.get('/api/estudiantes-pendientes', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT * FROM gestion_fuas 
+            WHERE estado IN ('debe_acreditar', 'documento_pendiente', 'documento_rechazado')
+            ORDER BY nombre ASC
+        `);
+        res.json({ exitoso: true, estudiantes: result.rows })
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// Detectar No Postulantes
+app.post('/api/detectar-no-postulantes', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { ruts_postulantes } = req.body
+        if (!ruts_postulantes?.length) return res.status(400).json({ error: 'RUTs requeridos' })
+
+        const setPostulantes = new Set(ruts_postulantes.map(limpiarRut));
+        const { rows: todos } = await client.query('SELECT * FROM datos_instituto');
+        const noPostularon = todos
+            .filter(e => !setPostulantes.has(e.rut))
+            .map(e => [
+                e.rut,
+                e.nombre || '',
+                e.correo || '',
+                e.carrera,
+                e.sede,
+                'fuas_nacional',
+                'no_postulo',
+                false,
+                new Date()
+            ]);
+
+        console.log(`Guardando ${noPostularon.length} no postulantes...`)
+
+        await client.query('BEGIN');
+
+        const BATCH_SIZE = 500
+        for (let i = 0; i < noPostularon.length; i += BATCH_SIZE) {
+            const batch = noPostularon.slice(i, i + BATCH_SIZE)
+            const query = buildUpsertQuery(
+                'gestion_fuas',
+                ['rut', 'nombre', 'correo', 'carrera', 'sede', 'origen', 'estado', 'notificacion_enviada', 'fecha_cruce'],
+                batch,
+                'rut',
+                ['nombre', 'correo', 'carrera', 'sede', 'origen', 'estado', 'notificacion_enviada', 'fecha_cruce']
+            );
+            if (query) await client.query(query.text, query.values)
+        }
+
+        await client.query('COMMIT');
+
+        res.json({
+            exitoso: true,
+            totalMatriculados: todos.length,
+            noPostularon: noPostularon.length,
+            estudiantes: noPostularon.map(r => ({ rut: r[0], nombre: r[1] }))
+        })
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error no postulantes:', error)
+        res.status(500).json({ exitoso: false, error: error.message })
+    } finally {
+        client.release();
+    }
+})
+
+// Listar No Postulantes
+app.get('/api/no-postulantes', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT * FROM gestion_fuas 
+            WHERE origen = 'fuas_nacional' 
+            ORDER BY nombre ASC
+        `);
+        res.json({ exitoso: true, estudiantes: result.rows })
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// Marcar Notificado
 app.post('/api/marcar-notificado', async (req, res) => {
     try {
         const { ruts } = req.body
-
-        if (!ruts || !Array.isArray(ruts)) {
-            return res.status(400).json({
-                exitoso: false,
-                error: 'Se requiere un array de ruts'
-            })
-        }
-
-        const { error } = await supabase
-            .from('estudiantes_fuas')
-            .update({
-                notificacion_enviada: true,
-                fecha_notificacion: new Date().toISOString()
-            })
-            .in('rut', ruts)
-
-        if (error) {
-            throw new Error(`Error actualizando Supabase: ${error.message}`)
-        }
-
-        res.json({
-            exitoso: true,
-            mensaje: `${ruts.length} estudiantes marcados como notificados`
-        })
-
+        if (!ruts?.length) return res.status(400).json({ error: 'RUTs requeridos' })
+        await pool.query(
+            `UPDATE gestion_fuas SET notificacion_enviada = true, fecha_notificacion = NOW() WHERE rut = ANY($1)`,
+            [ruts]
+        );
+        res.json({ exitoso: true, mensaje: 'Estudiantes marcados como notificados' })
     } catch (error) {
-        console.error(' Error marcando notificados:', error)
-        res.status(500).json({
-            exitoso: false,
-            error: error.message
-        })
+        res.status(500).json({ error: error.message })
     }
 })
 
-// ============================================
-// DETECTAR ESTUDIANTES QUE NO POSTULARON A FUAS
-// ============================================
-app.post('/api/detectar-no-postulantes', async (req, res) => {
-    try {
-        const { ruts_postulantes } = req.body
-
-        if (!ruts_postulantes || !Array.isArray(ruts_postulantes)) {
-            return res.status(400).json({
-                exitoso: false,
-                error: 'Se requiere un array de ruts_postulantes'
-            })
-        }
-
-        console.log(`📊 Detectando no postulantes. Recibidos ${ruts_postulantes.length} RUTs de postulantes...`)
-
-        // Crear Set de RUTs postulantes (limpios) para búsqueda O(1)
-        const setPostulantes = new Set()
-        ruts_postulantes.forEach(rut => {
-            const rutLimpio = limpiarRut(rut)
-            if (rutLimpio) setPostulantes.add(rutLimpio)
-        })
-
-        console.log(`✓ ${setPostulantes.size} RUTs únicos de postulantes procesados`)
-
-        // Obtener TODOS los estudiantes del instituto (paginado)
-        let todosEstudiantesInstituto = []
-        let page = 0
-        const pageSize = 1000
-        let more = true
-
-        while (more) {
-            const { data, error } = await supabase
-                .from('datos_instituto')
-                .select('*')
-                .range(page * pageSize, (page + 1) * pageSize - 1)
-
-            if (error) throw new Error(`Error leyendo instituto: ${error.message}`)
-
-            if (data.length > 0) {
-                todosEstudiantesInstituto = todosEstudiantesInstituto.concat(data)
-                page++
-                if (data.length < pageSize) more = false
-            } else {
-                more = false
-            }
-        }
-
-        console.log(`✓ Instituto cargado: ${todosEstudiantesInstituto.length} estudiantes matriculados`)
-
-        // Encontrar estudiantes que NO postularon
-        // Lógica: Matriculados - Postulantes = No Postularon
-        const noPostularon = []
-
-        todosEstudiantesInstituto.forEach(est => {
-            const rutLimpio = limpiarRut(est.rut)
-            if (rutLimpio && !setPostulantes.has(rutLimpio)) {
-                noPostularon.push({
-                    rut: rutLimpio,
-                    nombre: est.nombre || null,
-                    correo: est.correo || null,
-                    carrera: est.carrera || null,
-                    sede: est.sede || null,
-                    origen: 'fuas_nacional',
-                    estado: 'no_postulo',
-                    notificacion_enviada: false,
-                    fecha_notificacion: null,
-                    fecha_cruce: new Date().toISOString()
-                })
-            }
-        })
-
-        console.log(`📋 Encontrados ${noPostularon.length} estudiantes que NO postularon`)
-
-        // Guardar en Supabase tabla gestion_fuas
-        const BATCH_SIZE = 500
-        let totalGuardados = 0
-        let erroresGuardado = []
-
-        for (let i = 0; i < noPostularon.length; i += BATCH_SIZE) {
-            const lote = noPostularon.slice(i, i + BATCH_SIZE)
-
-            const { data: dataInsert, error: errorInsert } = await supabase
-                .from('gestion_fuas')
-                .upsert(lote, { onConflict: 'rut' })
-                .select()
-
-            if (errorInsert) {
-                console.error(`❌ Error guardando lote:`, errorInsert.message)
-                erroresGuardado.push({
-                    lote: Math.floor(i / BATCH_SIZE) + 1,
-                    error: errorInsert.message
-                })
-            } else {
-                totalGuardados += dataInsert?.length || lote.length
-            }
-        }
-
-        console.log(`✓ Guardados: ${totalGuardados}/${noPostularon.length}`)
-
-        res.json({
-            exitoso: erroresGuardado.length === 0,
-            totalMatriculados: todosEstudiantesInstituto.length,
-            totalPostulantes: setPostulantes.size,
-            noPostularon: noPostularon.length,
-            guardados: totalGuardados,
-            estudiantes: noPostularon,
-            mensaje: erroresGuardado.length === 0
-                ? `${noPostularon.length} estudiantes detectados que no postularon a FUAS`
-                : `${noPostularon.length} detectados, ${totalGuardados} guardados. Errores en algunos lotes.`
-        })
-
-    } catch (error) {
-        console.error('❌ Error detectando no postulantes:', error)
-        res.status(500).json({
-            exitoso: false,
-            error: error.message,
-            mensaje: 'Error al detectar estudiantes que no postularon'
-        })
-    }
-})
-
-// ============================================
-// OBTENER ESTUDIANTES QUE NO POSTULARON
-// ============================================
-app.get('/api/no-postulantes', async (req, res) => {
-    try {
-        const { data, error } = await supabase
-            .from('gestion_fuas')
-            .select('*')
-            .eq('origen', 'fuas_nacional')
-            .order('nombre', { ascending: true })
-
-        if (error) {
-            throw new Error(`Error consultando Supabase: ${error.message}`)
-        }
-
-        res.json({
-            exitoso: true,
-            total: data.length,
-            estudiantes: data
-        })
-
-    } catch (error) {
-        console.error('Error obteniendo no postulantes:', error)
-        res.status(500).json({
-            exitoso: false,
-            error: error.message
-        })
-    }
-})
-
-// ============================================
-// MARCAR NO POSTULANTES COMO NOTIFICADOS
-// ============================================
 app.post('/api/marcar-notificado-fuas', async (req, res) => {
     try {
         const { ruts } = req.body
-
-        if (!ruts || !Array.isArray(ruts)) {
-            return res.status(400).json({
-                exitoso: false,
-                error: 'Se requiere un array de ruts'
-            })
-        }
-
-        const { error } = await supabase
-            .from('gestion_fuas')
-            .update({
-                notificacion_enviada: true,
-                fecha_notificacion: new Date().toISOString()
-            })
-            .in('rut', ruts)
-
-        if (error) {
-            throw new Error(`Error actualizando Supabase: ${error.message}`)
-        }
-
-        res.json({
-            exitoso: true,
-            mensaje: `${ruts.length} estudiantes marcados como notificados`
-        })
-
+        if (!ruts?.length) return res.status(400).json({ error: 'RUTs requeridos' })
+        await pool.query(
+            `UPDATE gestion_fuas SET notificacion_enviada = true, fecha_notificacion = NOW() WHERE rut = ANY($1)`,
+            [ruts]
+        );
+        res.json({ exitoso: true, mensaje: 'Estudiantes marcados como notificados' })
     } catch (error) {
-        console.error('Error marcando notificados FUAS:', error)
-        res.status(500).json({
-            exitoso: false,
-            error: error.message
-        })
+        res.status(500).json({ error: error.message })
     }
 })
 
 // ============================================
-// UTILIDADES
+// ENDPOINTS PORTAL ESTUDIANTE
 // ============================================
 
-/**
- * Limpia un RUT eliminando puntos, guiones y espacios
- * Retorna solo los dígitos (sin DV)
- */
-function limpiarRut(rut) {
-    if (!rut) return ''
-    let val = String(rut)
+app.get('/api/estudiantes/:rut', async (req, res) => {
+    try {
+        const { rut } = req.params;
+        const { rows } = await pool.query('SELECT * FROM estudiantes WHERE rut = $1', [rut]);
+        if (rows.length === 0) {
+            // Si no está en tabla estudiantes, buscamos en datos_instituto para login temporal
+            const { rows: inst } = await pool.query('SELECT * FROM datos_instituto WHERE rut = $1', [rut]);
+            if (inst.length > 0) return res.json(inst[0]);
+            return res.status(404).json({ error: 'Estudiante no encontrado' });
+        }
+        res.json(rows[0]);
+    } catch (err) { res.status(500).json({ error: err.message }) }
+});
 
-    // Si tiene guión, tomar la parte izquierda
-    if (val.includes('-')) {
-        val = val.split('-')[0]
-    }
+app.get('/api/gestion-fuas/:rut', async (req, res) => {
+    try {
+        const { rut } = req.params;
+        const { rows } = await pool.query('SELECT rut, estado, documento_url, comentario_rechazo FROM gestion_fuas WHERE rut = $1', [rut]);
+        res.json(rows.length > 0 ? rows[0] : null);
+    } catch (err) { res.status(500).json({ error: err.message }) }
+});
 
-    // Eliminar puntos y espacios, dejar solo números y K (aunque K no debería ir en el cuerpo)
-    let rutLimpio = val.replace(/[^0-9kK]/g, '')
+app.post('/api/gestion-fuas/:rut/documento', async (req, res) => {
+    try {
+        const { rut } = req.params;
+        const { documento_url } = req.body;
 
-    // Si por alguna razón quedó un DV pegado al final (caso borde sin guion pero con DV) 
-    // y el largo es > 8 (ej: 123456789), es arriesgado cortar ciegamente sin guion.
-    // Asumiremos que la entrada "con guion" es la norma para datos completos, 
-    // y si viene sin guion es solo el cuerpo.
+        await pool.query(
+            `UPDATE gestion_fuas 
+             SET documento_url = $1, 
+                 estado = 'documento_pendiente', 
+                 fecha_documento = NOW(), 
+                 comentario_rechazo = NULL 
+             WHERE rut = $2`,
+            [documento_url, rut]
+        );
 
-    return rutLimpio
-}
+        res.json({ exitoso: true });
+    } catch (err) { res.status(500).json({ error: err.message }) }
+});
 
-// ============================================
-// INICIAR SERVIDOR
-// ============================================
+app.get('/api/citas/estudiante/:rut', async (req, res) => {
+    try {
+        const { rut } = req.params;
+        const query = `
+            SELECT c.*, 
+            json_build_object('nombre', a.nombre, 'correo', a.correo) as asistentes_sociales
+            FROM citas c
+            LEFT JOIN asistentes_sociales a ON c.rut_asistente = a.rut
+            WHERE c.rut_estudiante = $1
+            ORDER BY c.inicio DESC
+        `;
+        const { rows } = await pool.query(query, [rut]);
+        res.json(rows);
+    } catch (err) { res.status(500).json({ error: err.message }) }
+});
+
+app.put('/api/citas/:id/cancelar', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { rows } = await pool.query(
+            "UPDATE citas SET estado = 'cancelada', actualizado_en = NOW() WHERE id = $1 RETURNING *",
+            [id]
+        );
+        if (rows.length === 0) return res.status(404).json({ error: 'Cita no encontrada' });
+        res.json(true);
+    } catch (err) { res.status(500).json({ error: err.message }) }
+});
+
+// Verificar si estudiante tiene cita activa esta semana
+app.get('/api/citas/verificar-semana/:rut', async (req, res) => {
+    try {
+        const { rut } = req.params;
+        const { fecha } = req.query; // fecha en formato YYYY-MM-DD
+
+        // Calcular inicio y fin de la semana
+        const dateObj = fecha ? new Date(fecha) : new Date();
+        const dayOfWeek = dateObj.getDay();
+        const diff = dateObj.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Lunes
+
+        const startOfWeek = new Date(dateObj.setDate(diff));
+        startOfWeek.setHours(0, 0, 0, 0);
+
+        const endOfWeek = new Date(startOfWeek);
+        endOfWeek.setDate(startOfWeek.getDate() + 6);
+        endOfWeek.setHours(23, 59, 59, 999);
+
+        const { rows } = await pool.query(
+            `SELECT id FROM citas 
+             WHERE rut_estudiante = $1 
+             AND estado != 'cancelada'
+             AND inicio >= $2 AND inicio <= $3`,
+            [rut, startOfWeek.toISOString(), endOfWeek.toISOString()]
+        );
+
+        res.json({ tieneCita: rows.length > 0, cantidad: rows.length });
+    } catch (err) { res.status(500).json({ error: err.message }) }
+});
+
+// Validar o rechazar documento de estudiante
+app.put('/api/gestion-fuas/:rut/validar', async (req, res) => {
+    try {
+        const { rut } = req.params;
+        const { validado, comentario, validado_por } = req.body;
+
+        const nuevoEstado = validado ? 'documento_validado' : 'documento_rechazado';
+
+        await pool.query(
+            `UPDATE gestion_fuas 
+             SET estado = $1, 
+                 validado_por = $2, 
+                 comentario_rechazo = $3
+             WHERE rut = $4`,
+            [nuevoEstado, validado_por || null, validado ? null : comentario, rut]
+        );
+
+        res.json({ exitoso: true, estado: nuevoEstado });
+    } catch (err) { res.status(500).json({ error: err.message }) }
+});
+
 app.listen(PORT, () => {
     console.log(`
- Backend GestorCeduc iniciado
+ Backend GestorCeduc migrado a PostgreSQL
  Puerto: ${PORT}
  URL: http://localhost:${PORT}
- Health: http://localhost:${PORT}/health
-
-Endpoints disponibles:
-  GET  /api/sync-instituto        - Sincronizar estudiantes desde SQL Server
-  POST /api/cruzar-datos          - Cruzar datos Ministerio con Instituto
-  GET  /api/estudiantes-pendientes - Listar estudiantes que deben postular
-  POST /api/marcar-notificado     - Marcar estudiantes como notificados
+ DB: ${process.env.PG_DATABASE}@${process.env.PG_HOST}
     `)
 })
 
 module.exports = app
+
+// ============================================
+// ENDPOINTS GESTION ESTUDIANTES (useStudents)
+// ============================================
+
+// Listar estudiantes con filtros
+app.get('/api/estudiantes', async (req, res) => {
+    try {
+        const { busqueda, debe_postular, estado_fuas, limit, offset } = req.query
+
+        let query = 'SELECT * FROM estudiantes WHERE 1=1'
+        const values = []
+        let paramIndex = 1
+
+        if (busqueda) {
+            query += ` AND (rut ILIKE $${paramIndex} OR nombre ILIKE $${paramIndex})`
+            values.push(`%${busqueda}%`)
+            paramIndex++
+        }
+
+        if (debe_postular !== undefined) {
+            query += ` AND debe_postular = $${paramIndex}`
+            values.push(debe_postular === 'true')
+            paramIndex++
+        }
+
+        if (estado_fuas) {
+            query += ` AND estado_fuas = $${paramIndex}`
+            values.push(estado_fuas)
+            paramIndex++
+        }
+
+        query += ' ORDER BY nombre ASC'
+
+        if (limit) {
+            query += ` LIMIT $${paramIndex}`
+            values.push(parseInt(limit))
+            paramIndex++
+        }
+
+        if (offset) {
+            query += ` OFFSET $${paramIndex}`
+            values.push(parseInt(offset))
+            paramIndex++
+        }
+
+        const { rows } = await pool.query(query, values)
+        res.json(rows)
+    } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// Contar estudiantes pendientes
+app.get('/api/estudiantes/count/pendientes', async (req, res) => {
+    try {
+        const { rows } = await pool.query('SELECT COUNT(*) FROM estudiantes WHERE debe_postular = true')
+        res.json({ count: parseInt(rows[0].count) })
+    } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// Actualizar estudiante
+app.put('/api/estudiantes/:rut', async (req, res) => {
+    try {
+        const { rut } = req.params
+        const updates = req.body
+
+        // Construir query dinámica
+        const keys = Object.keys(updates)
+        if (keys.length === 0) return res.status(400).json({ error: 'No updates provided' })
+
+        const setClause = keys.map((key, i) => `${key} = $${i + 2}`).join(', ')
+        const values = [rut, ...Object.values(updates)]
+
+        const { rowCount } = await pool.query(
+            `UPDATE estudiantes SET ${setClause} WHERE rut = $1`,
+            values
+        )
+
+        if (rowCount === 0) return res.status(404).json({ error: 'Estudiante no encontrado' })
+        res.json({ success: true })
+    } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// Marcar notificados masivo (tabla estudiantes)
+app.post('/api/estudiantes/notificar', async (req, res) => {
+    try {
+        const { ruts } = req.body
+        if (!ruts?.length) return res.status(400).json({ error: 'RUTs requeridos' })
+
+        await pool.query(
+            "UPDATE estudiantes SET notificacion_enviada = true, fecha_notificacion = NOW() WHERE rut = ANY($1)",
+            [ruts]
+        )
+        res.json({ success: true, message: 'Estudiantes marcados como notificados' })
+    } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// ============================================
+// ENDPOINTS ASISTENTES (useAsistentesSociales)
+// ============================================
+
+app.get('/api/asistentes-sociales', async (req, res) => {
+    try {
+        const { rows } = await pool.query('SELECT * FROM asistentes_sociales WHERE activo = true ORDER BY nombre ASC')
+        res.json(rows)
+    } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// ============================================
+// ENDPOINTS GESTION CITAS (useCitas)
+// ============================================
+
+// Crear cita
+app.post('/api/citas', async (req, res) => {
+    try {
+        const { rut_estudiante, rut_asistente, inicio, fin, estado, motivo } = req.body
+        const { rows } = await pool.query(
+            `INSERT INTO citas (rut_estudiante, rut_asistente, inicio, fin, estado, motivo) 
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+            [rut_estudiante, rut_asistente, inicio, fin, estado, motivo]
+        )
+        res.json(rows[0])
+    } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// Obtener citas por asistente
+app.get('/api/citas/asistente/:rut', async (req, res) => {
+    try {
+        const { rut } = req.params
+        const query = `
+            SELECT c.*, 
+            json_build_object('nombre', e.nombre, 'correo', e.correo, 'rut', e.rut) as estudiantes
+            FROM citas c
+            LEFT JOIN estudiantes e ON c.rut_estudiante = e.rut
+            WHERE c.rut_asistente = $1
+            ORDER BY c.inicio ASC
+        `
+        const { rows } = await pool.query(query, [rut])
+        res.json(rows)
+    } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// Obtener citas hoy asistente
+app.get('/api/citas/hoy/:rut', async (req, res) => {
+    try {
+        const { rut } = req.params
+        const query = `
+            SELECT c.*, 
+            json_build_object('nombre', e.nombre, 'correo', e.correo, 'rut', e.rut) as estudiantes
+            FROM citas c
+            LEFT JOIN estudiantes e ON c.rut_estudiante = e.rut
+            WHERE c.rut_asistente = $1
+            AND c.inicio::date = CURRENT_DATE
+            ORDER BY c.inicio ASC
+        `
+        const { rows } = await pool.query(query, [rut])
+        res.json(rows)
+    } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// Actualizar cita (estado, completada, etc)
+app.put('/api/citas/:id', async (req, res) => {
+    try {
+        const { id } = req.params
+        const updates = req.body
+
+        const keys = Object.keys(updates)
+        if (keys.length === 0) return res.status(400).json({ error: 'No updates provided' })
+
+        // Añadir actualizado_en
+        updates.actualizado_en = new Date()
+        const keysWithDate = [...keys, 'actualizado_en']
+
+        const setClause = keysWithDate.map((key, i) => `${key} = $${i + 2}`).join(', ')
+        const values = [id, ...Object.values(updates), updates.actualizado_en]
+
+        const { rowCount } = await pool.query(
+            `UPDATE citas SET ${setClause} WHERE id = $1`,
+            values
+        )
+
+        if (rowCount === 0) return res.status(404).json({ error: 'Cita no encontrada' })
+        res.json({ success: true })
+    } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// Citas en Rango
+app.get('/api/citas/rango', async (req, res) => {
+    try {
+        const { rut_asistente, inicio, fin } = req.query
+        const { rows } = await pool.query(
+            `SELECT * FROM citas 
+             WHERE rut_asistente = $1 
+             AND estado != 'cancelada'
+             AND inicio >= $2 AND inicio <= $3`,
+            [rut_asistente, inicio, fin]
+        )
+        res.json(rows)
+    } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// Datos Ministerio (Fallback)
+app.get('/api/datos-ministerio', async (req, res) => {
+    try {
+        const { rows } = await pool.query('SELECT rut, tipo, beneficio FROM datos_ministerio')
+        res.json(rows)
+    } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// Datos Instituto (Fallback)
+app.get('/api/datos-instituto', async (req, res) => {
+    try {
+        const { rows } = await pool.query('SELECT rut, nombre, correo, carrera, sede FROM datos_instituto')
+        res.json(rows)
+    } catch (err) { res.status(500).json({ error: err.message }) }
+})

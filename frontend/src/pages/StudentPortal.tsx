@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { useCitas } from '../hooks/useCitas'
 import { useToast } from '../components/ui/Toast'
-import { supabase } from '../lib/supabase'
+import { api } from '../lib/api'
 import { formatDateTime, formatDateShort } from '../lib/dateUtils'
 import { subirComprobanteFUAS, validarArchivoPDF } from '../lib/storageService'
 import type { Estudiante, EstadoCita, AsistenteSocial, EstadoGestionFUAS } from '../types/database'
@@ -34,7 +33,6 @@ export default function StudentPortal() {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
-  const { fetchCitasByEstudiante, cancelarCita } = useCitas()
 
   const [estudianteData, setEstudianteData] = useState<Estudiante | null>(null)
   const [citas, setCitas] = useState<CitaConAsistente[]>([])
@@ -53,25 +51,17 @@ export default function StudentPortal() {
 
       try {
         // Obtener datos del estudiante
-        const { data: estudiante } = await supabase
-          .from('estudiantes')
-          .select('*')
-          .eq('rut', user.rut)
-          .single()
-
+        const estudiante = await api.getInfoEstudiante(user.rut)
         if (estudiante) setEstudianteData(estudiante)
 
         // Obtener citas
-        const citasData = await fetchCitasByEstudiante(user.rut)
+        // Nota: fetchCitasByEstudiante (del hook useCitas) también debería migrar internamente a api.getCitasEstudiante
+        // Pero por ahora usamos la API directa aquí para consistencia
+        const citasData = await api.getCitasEstudiante(user.rut)
         setCitas(citasData as CitaConAsistente[])
 
         // Verificar si está en gestion_fuas
-        const { data: gestionFuas } = await supabase
-          .from('gestion_fuas')
-          .select('rut, estado, documento_url, comentario_rechazo')
-          .eq('rut', user.rut)
-          .single()
-
+        const gestionFuas = await api.getGestionFuas(user.rut)
         if (gestionFuas) {
           setGestionFUASData(gestionFuas)
         }
@@ -83,7 +73,7 @@ export default function StudentPortal() {
     }
 
     cargarDatos()
-  }, [user, fetchCitasByEstudiante])
+  }, [user]) // Removed fetchCitasByEstudiante dependency as we use api directly
 
   // Cancelar cita
   const handleCancelarCita = async (citaId: string) => {
@@ -91,13 +81,13 @@ export default function StudentPortal() {
 
     setCancelandoId(citaId)
     try {
-      const exito = await cancelarCita(citaId)
-      if (exito && user) {
-        toast.exito('Cita cancelada exitosamente')
-        const citasData = await fetchCitasByEstudiante(user.rut)
+      await api.cancelarCita(citaId)
+      toast.exito('Cita cancelada exitosamente')
+
+      // Recargar citas
+      if (user) {
+        const citasData = await api.getCitasEstudiante(user.rut)
         setCitas(citasData as CitaConAsistente[])
-      } else {
-        toast.error('Error al cancelar la cita')
       }
     } catch (error) {
       console.error('Error al cancelar cita:', error)
@@ -268,33 +258,17 @@ export default function StudentPortal() {
                                 return
                               }
 
-                              // Actualizar en base de datos
-                              const { error } = await supabase
-                                .from('gestion_fuas')
-                                .update({
-                                  documento_url: resultado.url,
-                                  estado: 'documento_pendiente',
-                                  fecha_documento: new Date().toISOString(),
-                                  comentario_rechazo: null
-                                })
-                                .eq('rut', user.rut)
-
-                              if (error) {
-                                toast.error('Error al guardar documento')
-                                return
+                              // Llamada al backend
+                              if (resultado.url) {
+                                await api.registrarDocumento(user.rut, resultado.url)
                               }
 
                               toast.exito('Comprobante subido correctamente')
                               setArchivoComprobante(null)
 
-                              // Recargar datos
-                              const { data } = await supabase
-                                .from('gestion_fuas')
-                                .select('rut, estado, documento_url, comentario_rechazo')
-                                .eq('rut', user.rut)
-                                .single()
-
-                              if (data) setGestionFUASData(data)
+                              // Recargar datos via API
+                              const gestionFuas = await api.getGestionFuas(user.rut)
+                              if (gestionFuas) setGestionFUASData(gestionFuas)
                             } catch (error) {
                               console.error(error)
                               toast.error('Error al subir comprobante')

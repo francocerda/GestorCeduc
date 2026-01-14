@@ -1,6 +1,9 @@
 import { useState, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
-import type { Estudiante, EstudianteUpdate, AsistenteSocial } from '../types/database'
+import { api } from '../lib/api'
+import type { Estudiante, AsistenteSocial } from '../types/database'
+
+// Tipo auxiliar para actualizaciones
+type EstudianteUpdate = Partial<Estudiante>
 
 interface FiltrosEstudiantes {
     busqueda?: string
@@ -24,40 +27,14 @@ export function useStudents() {
         setError(null)
 
         try {
-            let consulta = supabase
-                .from('estudiantes')
-                .select('*')
-
-            // Filtrar por término de búsqueda (RUT o nombre)
-            if (filtros.busqueda) {
-                consulta = consulta.or(`rut.ilike.%${filtros.busqueda}%,nombre.ilike.%${filtros.busqueda}%`)
-            }
-
-            // Filtrar por debe_postular
-            if (filtros.debePostular !== undefined) {
-                consulta = consulta.eq('debe_postular', filtros.debePostular)
-            }
-
-            // Filtrar por estado FUAS
-            if (filtros.estadoFuas) {
-                consulta = consulta.eq('estado_fuas', filtros.estadoFuas)
-            }
-
-            // Paginación
-            if (filtros.limite) {
-                consulta = consulta.limit(filtros.limite)
-            }
-            if (filtros.desplazamiento) {
-                consulta = consulta.range(filtros.desplazamiento, filtros.desplazamiento + (filtros.limite || 10) - 1)
-            }
-
-            // Ordenar por nombre
-            consulta = consulta.order('nombre', { ascending: true })
-
-            const { data, error: errorConsulta } = await consulta
-
-            if (errorConsulta) throw errorConsulta
-            return data || []
+            const data = await api.getEstudiantes({
+                busqueda: filtros.busqueda,
+                debe_postular: filtros.debePostular,
+                estado_fuas: filtros.estadoFuas,
+                limite: filtros.limite,
+                desplazamiento: filtros.desplazamiento
+            })
+            return data
         } catch (err) {
             const mensaje = err instanceof Error ? err.message : 'Error al cargar estudiantes'
             setError(mensaje)
@@ -74,17 +51,9 @@ export function useStudents() {
         setError(null)
 
         try {
-            const { data, error: errorConsulta } = await supabase
-                .from('estudiantes')
-                .select('*')
-                .eq('rut', rut)
-                .single()
-
-            if (errorConsulta && errorConsulta.code !== 'PGRST116') throw errorConsulta
+            const data = await api.getInfoEstudiante(rut)
             return data
         } catch (err) {
-            const mensaje = err instanceof Error ? err.message : 'Error al cargar estudiante'
-            setError(mensaje)
             console.error('❌ Error al obtener estudiante:', err)
             return null
         } finally {
@@ -98,12 +67,8 @@ export function useStudents() {
         setError(null)
 
         try {
-            const { error: errorActualizar } = await supabase
-                .from('estudiantes')
-                .update(cambios)
-                .eq('rut', rut)
-
-            if (errorActualizar) throw errorActualizar
+            const exito = await api.updateEstudiante(rut, cambios)
+            if (!exito) throw new Error('Error al actualizar')
             console.log('✅ Estudiante actualizado:', rut)
             return true
         } catch (err) {
@@ -119,13 +84,7 @@ export function useStudents() {
     // Contar estudiantes que deben postular
     const contarEstudiantesPendientes = useCallback(async (): Promise<number> => {
         try {
-            const { count, error: errorConteo } = await supabase
-                .from('estudiantes')
-                .select('*', { count: 'exact', head: true })
-                .eq('debe_postular', true)
-
-            if (errorConteo) throw errorConteo
-            return count || 0
+            return await api.countEstudiantesPendientes()
         } catch (err) {
             console.error('❌ Error al contar estudiantes:', err)
             return 0
@@ -160,14 +119,8 @@ export function useAsistentesSociales() {
         setError(null)
 
         try {
-            const { data, error: errorConsulta } = await supabase
-                .from('asistentes_sociales')
-                .select('*')
-                .eq('activo', true)
-                .order('nombre', { ascending: true })
-
-            if (errorConsulta) throw errorConsulta
-            return data || []
+            const data = await api.getAsistentesSociales()
+            return data
         } catch (err) {
             const mensaje = err instanceof Error ? err.message : 'Error al cargar asistentes'
             setError(mensaje)
