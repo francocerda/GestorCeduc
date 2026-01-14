@@ -2,21 +2,6 @@
 
 > Plataforma web para automatizar la gestión de postulaciones FUAS en instituciones educativas chilenas.
 
-![React](https://img.shields.io/badge/React-19.2.0-61DAFB?style=flat&logo=react)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat&logo=typescript)
-![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3FCF8E?style=flat&logo=supabase)
-![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4-06B6D4?style=flat&logo=tailwindcss)
-
----
-
-## 🚀 Quick Start
-
-### Prerrequisitos
-
-- Node.js 18+
-- npm o yarn
-- Cuenta en [Supabase](https://supabase.com)
-
 ### Instalación
 
 ```bash
