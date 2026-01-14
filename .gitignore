@@ -5,6 +5,7 @@ docs/
 frontend/dist/
 backend/dist/
 frontend/build/
+CONTEXTO_SESION.md
 
 .env
 .env.local
@@ -15,6 +16,8 @@ frontend/build/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+*.sql
 
 .vscode/
 .idea/
