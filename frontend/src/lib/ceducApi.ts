@@ -13,7 +13,7 @@ export const ceducApi = {
      */
     async login(username: string, password: string): Promise<LoginResponse> {
         try {
-            console.log('🔐 Iniciando login con:', username)
+            console.log(' Iniciando login con:', username)
             const response = await fetch(`${API_BASE_URL}/Login`, {
                 method: 'POST',
                 headers: {
@@ -30,7 +30,7 @@ export const ceducApi = {
 
             const data: LoginResponse = await response.json()
 
-            console.log('✅ Respuesta de la API:', data)
+            console.log(' Respuesta de la API:', data)
 
             if (data.logged_in !== 'true') {
                 throw new Error('Credenciales inválidas')

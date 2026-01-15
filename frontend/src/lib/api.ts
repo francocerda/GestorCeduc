@@ -55,7 +55,40 @@ export interface ResultadoCargaMinisterio {
     error?: string;
 }
 
+export interface ResultadoSyncEstudiante {
+    exitoso: boolean;
+    estadoFuas: {
+        estado: string;
+        tipo_beneficio: string | null;
+        carrera: string | null;
+    } | null;
+}
+
 export const api = {
+    // ==========================================
+    // AUTENTICACIÓN (sync login)
+    // ==========================================
+
+    async syncAsistenteSocial(data: { rut: string; correo: string; nombre: string; roles: any[] }): Promise<{ exitoso: boolean }> {
+        const res = await fetch(`${API_URL}/auth/sync-asistente`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error('Error sincronizando asistente social');
+        return res.json();
+    },
+
+    async syncEstudiante(data: { rut: string; correo: string; nombre: string; roles: any[] }): Promise<ResultadoSyncEstudiante> {
+        const res = await fetch(`${API_URL}/auth/sync-estudiante`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error('Error sincronizando estudiante');
+        return res.json();
+    },
+
     // ==========================================
     // GESTIÓN ADMINISTRATIVA (SocialWorkerPortal)
     // ==========================================

@@ -65,7 +65,7 @@ export async function verificarBackend(): Promise<boolean> {
 }
 
 /**
- * Sincroniza estudiantes desde SQL Server del Instituto a Supabase
+ * Sincroniza estudiantes desde SQL Server del Instituto a PostgreSQL
  * Ejecuta: exec [ESTUDIANTES_MAT] 2026
  */
 export async function syncEstudiantesInstituto(): Promise<ResultadoSync> {

@@ -503,6 +503,99 @@ app.put('/api/gestion-fuas/:rut/validar', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 });
 
+// ============================================
+// ENDPOINTS AUTENTICACIÓN (sync login)
+// ============================================
+
+// Sincronizar Asistente Social durante login
+app.post('/api/auth/sync-asistente', async (req, res) => {
+    try {
+        const { rut, correo, nombre, roles } = req.body;
+        if (!rut) return res.status(400).json({ error: 'RUT requerido' });
+
+        // Verificar si existe
+        const { rows } = await pool.query('SELECT rut FROM asistentes_sociales WHERE rut = $1', [rut]);
+
+        if (rows.length > 0) {
+            // Actualizar existente
+            await pool.query(
+                `UPDATE asistentes_sociales 
+                 SET correo = $2, nombre = $3, roles = $4, actualizado_en = NOW()
+                 WHERE rut = $1`,
+                [rut, correo, nombre, JSON.stringify(roles)]
+            );
+            console.log(`✅ Asistente Social actualizado: ${rut}`);
+        } else {
+            // Crear nuevo con horario por defecto
+            const horarioDefecto = {
+                lunes: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '18:00' }],
+                martes: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '18:00' }],
+                miercoles: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '18:00' }],
+                jueves: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '18:00' }],
+                viernes: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '17:00' }]
+            };
+
+            await pool.query(
+                `INSERT INTO asistentes_sociales (rut, correo, nombre, roles, horario_atencion, activo)
+                 VALUES ($1, $2, $3, $4, $5, true)`,
+                [rut, correo, nombre, JSON.stringify(roles), JSON.stringify(horarioDefecto)]
+            );
+            console.log(`✅ Asistente Social creado: ${rut}`);
+        }
+
+        res.json({ exitoso: true });
+    } catch (err) {
+        console.error('Error sync asistente:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Sincronizar Estudiante durante login
+app.post('/api/auth/sync-estudiante', async (req, res) => {
+    try {
+        const { rut, correo, nombre, roles } = req.body;
+        if (!rut) return res.status(400).json({ error: 'RUT requerido' });
+
+        // Verificar si existe
+        const { rows } = await pool.query('SELECT rut FROM estudiantes WHERE rut = $1', [rut]);
+
+        if (rows.length > 0) {
+            // Actualizar existente
+            await pool.query(
+                `UPDATE estudiantes 
+                 SET correo = $2, nombre = $3, roles = $4, actualizado_en = NOW()
+                 WHERE rut = $1`,
+                [rut, correo, nombre, JSON.stringify(roles)]
+            );
+            console.log(`✅ Estudiante actualizado: ${rut}`);
+        } else {
+            // Crear nuevo
+            await pool.query(
+                `INSERT INTO estudiantes (rut, correo, nombre, roles)
+                 VALUES ($1, $2, $3, $4)`,
+                [rut, correo, nombre, JSON.stringify(roles)]
+            );
+            console.log(`✅ Estudiante creado: ${rut}`);
+        }
+
+        // Obtener estado FUAS si existe
+        const { rows: fuasRows } = await pool.query(
+            'SELECT estado, tipo_beneficio, carrera FROM gestion_fuas WHERE rut = $1',
+            [rut]
+        );
+
+        const estadoFuas = fuasRows.length > 0 ? fuasRows[0] : null;
+
+        res.json({
+            exitoso: true,
+            estadoFuas
+        });
+    } catch (err) {
+        console.error('Error sync estudiante:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`
  Backend GestorCeduc migrado a PostgreSQL
@@ -519,55 +612,87 @@ module.exports = app
 // ============================================
 
 // Listar estudiantes con filtros
+// Si se filtra por debe_postular o estado_fuas, consulta gestion_fuas
 app.get('/api/estudiantes', async (req, res) => {
     try {
         const { busqueda, debe_postular, estado_fuas, limit, offset } = req.query
 
-        let query = 'SELECT * FROM estudiantes WHERE 1=1'
-        const values = []
-        let paramIndex = 1
+        // Si piden estudiantes que deben postular, usamos gestion_fuas
+        if (debe_postular === 'true' || estado_fuas) {
+            let query = 'SELECT * FROM gestion_fuas WHERE 1=1'
+            const values = []
+            let paramIndex = 1
 
-        if (busqueda) {
-            query += ` AND (rut ILIKE $${paramIndex} OR nombre ILIKE $${paramIndex})`
-            values.push(`%${busqueda}%`)
-            paramIndex++
+            if (busqueda) {
+                query += ` AND (rut ILIKE $${paramIndex} OR nombre ILIKE $${paramIndex})`
+                values.push(`%${busqueda}%`)
+                paramIndex++
+            }
+
+            if (estado_fuas) {
+                query += ` AND estado = $${paramIndex}`
+                values.push(estado_fuas)
+                paramIndex++
+            } else if (debe_postular === 'true') {
+                // Estudiantes que requieren acción
+                query += ` AND estado IN ('debe_acreditar', 'documento_pendiente', 'documento_rechazado', 'no_postulo')`
+            }
+
+            query += ' ORDER BY nombre ASC'
+
+            if (limit) {
+                query += ` LIMIT $${paramIndex}`
+                values.push(parseInt(limit))
+                paramIndex++
+            }
+
+            if (offset) {
+                query += ` OFFSET $${paramIndex}`
+                values.push(parseInt(offset))
+                paramIndex++
+            }
+
+            const { rows } = await pool.query(query, values)
+            res.json(rows)
+        } else {
+            // Consulta normal a tabla estudiantes
+            let query = 'SELECT * FROM estudiantes WHERE 1=1'
+            const values = []
+            let paramIndex = 1
+
+            if (busqueda) {
+                query += ` AND (rut ILIKE $${paramIndex} OR nombre ILIKE $${paramIndex})`
+                values.push(`%${busqueda}%`)
+                paramIndex++
+            }
+
+            query += ' ORDER BY nombre ASC'
+
+            if (limit) {
+                query += ` LIMIT $${paramIndex}`
+                values.push(parseInt(limit))
+                paramIndex++
+            }
+
+            if (offset) {
+                query += ` OFFSET $${paramIndex}`
+                values.push(parseInt(offset))
+                paramIndex++
+            }
+
+            const { rows } = await pool.query(query, values)
+            res.json(rows)
         }
-
-        if (debe_postular !== undefined) {
-            query += ` AND debe_postular = $${paramIndex}`
-            values.push(debe_postular === 'true')
-            paramIndex++
-        }
-
-        if (estado_fuas) {
-            query += ` AND estado_fuas = $${paramIndex}`
-            values.push(estado_fuas)
-            paramIndex++
-        }
-
-        query += ' ORDER BY nombre ASC'
-
-        if (limit) {
-            query += ` LIMIT $${paramIndex}`
-            values.push(parseInt(limit))
-            paramIndex++
-        }
-
-        if (offset) {
-            query += ` OFFSET $${paramIndex}`
-            values.push(parseInt(offset))
-            paramIndex++
-        }
-
-        const { rows } = await pool.query(query, values)
-        res.json(rows)
     } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// Contar estudiantes pendientes
+// Contar estudiantes pendientes (usa gestion_fuas)
 app.get('/api/estudiantes/count/pendientes', async (req, res) => {
     try {
-        const { rows } = await pool.query('SELECT COUNT(*) FROM estudiantes WHERE debe_postular = true')
+        const { rows } = await pool.query(`
+            SELECT COUNT(*) FROM gestion_fuas 
+            WHERE estado IN ('debe_acreditar', 'documento_pendiente', 'documento_rechazado', 'no_postulo')
+        `)
         res.json({ count: parseInt(rows[0].count) })
     } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -595,14 +720,15 @@ app.put('/api/estudiantes/:rut', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// Marcar notificados masivo (tabla estudiantes)
+// Marcar notificados masivo (tabla gestion_fuas - los campos de notificación están ahí)
 app.post('/api/estudiantes/notificar', async (req, res) => {
     try {
         const { ruts } = req.body
         if (!ruts?.length) return res.status(400).json({ error: 'RUTs requeridos' })
 
+        // Usar gestion_fuas que tiene los campos de notificación
         await pool.query(
-            "UPDATE estudiantes SET notificacion_enviada = true, fecha_notificacion = NOW() WHERE rut = ANY($1)",
+            "UPDATE gestion_fuas SET notificacion_enviada = true, fecha_notificacion = NOW() WHERE rut = ANY($1)",
             [ruts]
         )
         res.json({ success: true, message: 'Estudiantes marcados como notificados' })

@@ -136,30 +136,6 @@ export default function StudentPortal() {
       </header>
 
       <main id="main-content" className="max-w-5xl mx-auto px-4 py-8">
-        {/* Alerta FUAS */}
-        {estudianteData?.debe_postular && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <span className="text-amber-600 text-lg">!</span>
-              </div>
-              <div className="flex-1">
-                <h3 className="font-medium text-amber-900">Acción requerida</h3>
-                <p className="text-sm text-amber-800 mt-1">
-                  Debes agendar una cita para completar tu postulación FUAS ({estudianteData.tipo_beneficio}).
-                </p>
-                <Button
-                  size="sm"
-                  className="mt-3"
-                  onClick={() => navigate('/agendar')}
-                >
-                  Agendar Cita
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Alerta Gestión FUAS - con opción de subir comprobante */}
         {gestionFUASData && (
           <div className={`border rounded-lg p-4 mb-6 ${gestionFUASData.estado === 'documento_validado' || gestionFUASData.estado === 'acreditado'

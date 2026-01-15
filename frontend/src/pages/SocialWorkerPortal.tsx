@@ -213,9 +213,9 @@ export default function SocialWorkerPortal() {
         setSeleccionados(nueva)
     }
 
-    const estudiantesNotificables = estudiantes.filter(e =>
-        e.debe_postular && !e.ha_agendado_cita && !e.notificacion_enviada
-    )
+    // Estudiantes del tab "Estudiantes" vienen de gestion_fuas, no de tabla estudiantes
+    // Por ahora, todos los estudiantes de la lista son considerados "notificables"
+    const estudiantesNotificables = estudiantes
 
     const seleccionarTodos = () => {
         if (seleccionados.size === estudiantesNotificables.length) {
@@ -234,7 +234,11 @@ export default function SocialWorkerPortal() {
 
         try {
             const resultado = await enviarNotificacionesMasivas(
-                estudiantesAEnviar.map(e => ({ rut: e.rut, nombre: e.nombre, correo: e.correo }))
+                estudiantesAEnviar.map(e => ({
+                    rut: e.rut,
+                    nombre: e.nombre || 'Estudiante',
+                    correo: e.correo || ''
+                })).filter(e => e.correo) // Solo enviar a los que tienen correo
             )
 
             if (resultado.exitosos > 0) {
@@ -330,7 +334,7 @@ export default function SocialWorkerPortal() {
         }
     }
 
-    // Cargar estudiantes pendientes desde Supabase
+    // Cargar estudiantes pendientes desde PostgreSQL (gestion_fuas)
     // Primero intenta estudiantes_fuas, si está vacío, consulta datos_ministerio + datos_instituto
     const handleCargarPendientes = async () => {
         toast.info('Cargando estudiantes pendientes...')
@@ -637,7 +641,8 @@ export default function SocialWorkerPortal() {
                                 </thead>
                                 <tbody>
                                     {estudiantes.map(est => {
-                                        const esNotificable = est.debe_postular && !est.ha_agendado_cita && !est.notificacion_enviada
+                                        // Mostrar checkbox para todos los estudiantes con correo válido
+                                        const esNotificable = est.correo && est.correo.length > 0
                                         return (
                                             <tr key={est.rut} className="border-b border-gray-100 hover:bg-gray-50">
                                                 <td className="py-3 px-2">
@@ -654,13 +659,7 @@ export default function SocialWorkerPortal() {
                                                 <td className="py-3 px-3 font-medium">{est.nombre}</td>
                                                 <td className="py-3 px-3 text-sm text-gray-600">{est.correo}</td>
                                                 <td className="py-3 px-3">
-                                                    {est.ha_agendado_cita ? (
-                                                        <Badge variant="success">Con cita</Badge>
-                                                    ) : est.notificacion_enviada ? (
-                                                        <Badge variant="info">Notificado</Badge>
-                                                    ) : (
-                                                        <Badge variant="warning">Pendiente</Badge>
-                                                    )}
+                                                    <Badge variant="warning">Pendiente</Badge>
                                                 </td>
                                             </tr>
                                         )

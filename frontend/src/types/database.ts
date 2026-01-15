@@ -1,27 +1,19 @@
 import type { Role } from './auth'
 
+/**
+ * Interfaz Estudiante - coincide con schema PostgreSQL tabla 'estudiantes'
+ * Campos de gestión FUAS están en tabla 'gestion_fuas' (usar GestionFUAS)
+ */
 export interface Estudiante {
   rut: string
-  correo: string
-  nombre: string
+  correo: string | null
+  nombre: string | null
   roles: Role[] | null
   carrera: string | null
   sede: string | null
   anio_ingreso: number | null
-  debe_postular: boolean
-  es_postulante: boolean
-  es_renovante: boolean
-  tipo_beneficio: string | null
-  estado_fuas: string | null
-  primer_ingreso: string | null
-  ultimo_ingreso: string | null
-  ha_agendado_cita: boolean
-  fecha_ultima_cita: string | null
-  // Campos para rastreo de notificaciones
-  notificacion_enviada: boolean
-  fecha_notificacion: string | null
-  creado_en: string
-  actualizado_en: string
+  creado_en?: string
+  actualizado_en?: string
 }
 
 // Tipo para insertar estudiantes (sin campos auto-generados)

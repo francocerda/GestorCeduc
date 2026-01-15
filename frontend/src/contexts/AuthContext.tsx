@@ -1,11 +1,10 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { ceducApi } from '../lib/ceducApi'
-import { supabase } from '../lib/supabase'
+import { api } from '../lib/api'
 import type { User, Role } from '../types/auth'
-import type { EstudianteInsert } from '../types/database'
 
 // Roles que corresponden a Asistente Social
-const ROLES_ASISTENTE_SOCIAL = ['jef_dae', 'enc_aes']
+const ROLES_ASISTENTE_SOCIAL = ['jef_dae', 'enc_aes', 'asis_ae']
 
 interface AuthContextType {
   user: User | null
@@ -131,182 +130,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Sincroniza un Asistente Social con Supabase
+ * Sincroniza un Asistente Social con PostgreSQL via API
  */
 async function sincronizarAsistenteSocial(userData: User) {
   try {
-    console.log('🔄 Sincronizando Asistente Social con Supabase...')
+    console.log('🔄 Sincronizando Asistente Social con PostgreSQL...')
 
-    const { data: asistenteExistente, error: errorBusqueda } = await supabase
-      .from('asistentes_sociales')
-      .select('*')
-      .eq('rut', userData.rut)
-      .single()
+    await api.syncAsistenteSocial({
+      rut: userData.rut,
+      correo: userData.correo,
+      nombre: userData.nombre,
+      roles: userData.roles
+    })
 
-    if (errorBusqueda && errorBusqueda.code !== 'PGRST116') {
-      throw errorBusqueda
-    }
-
-    if (asistenteExistente) {
-      console.log('📝 Asistente existe, actualizando...')
-
-      const { error: errorUpdate } = await supabase
-        .from('asistentes_sociales')
-        .update({
-          correo: userData.correo,
-          nombre: userData.nombre,
-          roles: userData.roles,
-          actualizado_en: new Date().toISOString()
-        })
-        .eq('rut', userData.rut)
-
-      if (errorUpdate) throw errorUpdate
-
-      console.log('✅ Asistente Social actualizado')
-
-    } else {
-      console.log('➕ Creando nuevo Asistente Social...')
-
-      const nuevoAsistente = {
-        rut: userData.rut,
-        correo: userData.correo,
-        nombre: userData.nombre,
-        roles: userData.roles,
-        horario_atencion: {
-          lunes: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '18:00' }],
-          martes: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '18:00' }],
-          miercoles: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '18:00' }],
-          jueves: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '18:00' }],
-          viernes: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '17:00' }]
-        },
-        sede: null,
-        activo: true
-      }
-
-      const { error: errorInsert } = await supabase
-        .from('asistentes_sociales')
-        .insert(nuevoAsistente)
-
-      if (errorInsert) throw errorInsert
-
-      console.log('✅ Asistente Social creado')
-    }
-
+    console.log('✅ Asistente Social sincronizado')
   } catch (error) {
     console.error('❌ Error en sincronización de Asistente Social:', error)
   }
 }
 
 /**
- * Sincroniza un Estudiante con Supabase
+ * Sincroniza un Estudiante con PostgreSQL via API
  */
 async function sincronizarEstudiante(userData: User) {
   try {
-    console.log('🔄 Sincronizando Estudiante con Supabase...')
+    console.log('🔄 Sincronizando Estudiante con PostgreSQL...')
 
-    const { data: estudianteExistente, error: errorBusqueda } = await supabase
-      .from('estudiantes')
-      .select('*')
-      .eq('rut', userData.rut)
-      .single()
+    const resultado = await api.syncEstudiante({
+      rut: userData.rut,
+      correo: userData.correo,
+      nombre: userData.nombre,
+      roles: userData.roles
+    })
 
-    if (errorBusqueda && errorBusqueda.code !== 'PGRST116') {
-      throw errorBusqueda
-    }
+    console.log('✅ Estudiante sincronizado')
 
-    if (estudianteExistente) {
-      console.log('📝 Estudiante existe, actualizando...')
-
-      const { error: errorUpdate } = await supabase
-        .from('estudiantes')
-        .update({
-          correo: userData.correo,
-          nombre: userData.nombre,
-          roles: userData.roles,
-          ultimo_ingreso: new Date().toISOString()
-        })
-        .eq('rut', userData.rut)
-
-      if (errorUpdate) throw errorUpdate
-
-      console.log('✅ Estudiante actualizado')
-
+    if (resultado.estadoFuas) {
+      console.log('📋 Estado FUAS encontrado:', resultado.estadoFuas.estado)
     } else {
-      console.log('➕ Creando nuevo estudiante...')
-
-      const nuevoEstudiante: EstudianteInsert = {
-        rut: userData.rut,
-        correo: userData.correo,
-        nombre: userData.nombre,
-        roles: userData.roles,
-        primer_ingreso: new Date().toISOString(),
-        ultimo_ingreso: new Date().toISOString(),
-        debe_postular: false,
-        es_postulante: false,
-        es_renovante: false,
-        ha_agendado_cita: false,
-        carrera: null,
-        sede: null,
-        anio_ingreso: null,
-        tipo_beneficio: null,
-        estado_fuas: null,
-        fecha_ultima_cita: null,
-        notificacion_enviada: false,
-        fecha_notificacion: null
-      }
-
-      const { error: errorInsert } = await supabase
-        .from('estudiantes')
-        .insert(nuevoEstudiante)
-
-      if (errorInsert) throw errorInsert
-
-      console.log('✅ Estudiante creado')
+      console.log('ℹ️ Estudiante no tiene estado FUAS asignado')
     }
-
-    await verificarEstadoFUAS(userData.rut)
-
   } catch (error) {
     console.error('❌ Error en sincronización de Estudiante:', error)
-  }
-}
-
-async function verificarEstadoFUAS(rut: string) {
-  try {
-    console.log('🔍 Verificando estado FUAS...')
-
-    const { data: fuas, error } = await supabase
-      .from('estudiantes_fuas')
-      .select('*')
-      .eq('rut', rut)
-      .single()
-
-    if (error && error.code !== 'PGRST116') {
-      throw error
-    }
-
-    if (fuas) {
-      console.log('📋 Estudiante debe postular a FUAS')
-
-      const { error: errorUpdate } = await supabase
-        .from('estudiantes')
-        .update({
-          debe_postular: true,
-          tipo_beneficio: fuas.tipo_beneficio,
-          estado_fuas: 'pendiente_cita',
-          carrera: fuas.carrera
-        })
-        .eq('rut', rut)
-
-      if (errorUpdate) throw errorUpdate
-      console.log('✅ Estado FUAS actualizado')
-
-    } else {
-      console.log('ℹ️ Estudiante no debe postular a FUAS')
-    }
-
-  } catch (error) {
-    console.error('❌ Error al verificar FUAS:', error)
   }
 }
 
