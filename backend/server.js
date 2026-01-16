@@ -9,6 +9,21 @@ const express = require('express')
 const cors = require('cors')
 const sql = require('mssql')
 const pool = require('./db/pool')
+const multer = require('multer')
+const driveService = require('./services/googleDriveService')
+
+// Configuración de Multer para subida de archivos
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype === 'application/pdf') {
+            cb(null, true);
+        } else {
+            cb(new Error('Solo se permiten archivos PDF'), false);
+        }
+    }
+});
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -252,7 +267,17 @@ app.post('/api/cruzar-datos', async (req, res) => {
         res.json({
             exitoso: true,
             coincidencias: estudiantesFUAS.length,
-            estudiantes: estudiantesFUAS.map(row => ({ rut: row[0], nombre: row[1], estado: row[6] }))
+            estudiantes: estudiantesFUAS.map(row => ({
+                rut: row[0],
+                nombre: row[1],
+                correo: row[2],
+                carrera: row[3],
+                sede: row[4],
+                origen: row[5],
+                estado: row[6],
+                tipo_beneficio: row[7],
+                notificacion_enviada: row[8]
+            }))
         })
 
     } catch (error) {
@@ -272,7 +297,7 @@ app.get('/api/estudiantes-pendientes', async (req, res) => {
             WHERE estado IN ('debe_acreditar', 'documento_pendiente', 'documento_rechazado')
             ORDER BY nombre ASC
         `);
-        res.json({ exitoso: true, estudiantes: result.rows })
+        res.json({ exitoso: true, total: result.rows.length, estudiantes: result.rows })
     } catch (error) {
         res.status(500).json({ error: error.message })
     }
@@ -344,7 +369,7 @@ app.get('/api/no-postulantes', async (req, res) => {
             WHERE origen = 'fuas_nacional' 
             ORDER BY nombre ASC
         `);
-        res.json({ exitoso: true, estudiantes: result.rows })
+        res.json({ exitoso: true, total: result.rows.length, estudiantes: result.rows })
     } catch (error) {
         res.status(500).json({ error: error.message })
     }
@@ -386,9 +411,10 @@ app.post('/api/marcar-notificado-fuas', async (req, res) => {
 app.get('/api/estudiantes/:rut', async (req, res) => {
     try {
         const { rut } = req.params;
-        const { rows } = await pool.query('SELECT * FROM estudiantes WHERE rut = $1', [rut]);
+        // Buscar primero en gestion_fuas (tabla unificada)
+        const { rows } = await pool.query('SELECT * FROM gestion_fuas WHERE rut = $1', [rut]);
         if (rows.length === 0) {
-            // Si no está en tabla estudiantes, buscamos en datos_instituto para login temporal
+            // Si no está, buscar en datos_instituto como fallback
             const { rows: inst } = await pool.query('SELECT * FROM datos_instituto WHERE rut = $1', [rut]);
             if (inst.length > 0) return res.json(inst[0]);
             return res.status(404).json({ error: 'Estudiante no encontrado' });
@@ -422,6 +448,114 @@ app.post('/api/gestion-fuas/:rut/documento', async (req, res) => {
 
         res.json({ exitoso: true });
     } catch (err) { res.status(500).json({ error: err.message }) }
+});
+
+// ========== ENDPOINT DE SUBIDA A GOOGLE DRIVE ==========
+
+// Subir documento de estudiante FUAS (PDF)
+app.post('/api/documentos/estudiante/:rut', upload.single('archivo'), async (req, res) => {
+    try {
+        const { rut } = req.params;
+
+        if (!req.file) {
+            return res.status(400).json({ error: 'No se recibió archivo' });
+        }
+
+        console.log(`📤 Subiendo documento para estudiante ${rut}...`);
+
+        // Subir a Google Drive
+        // Obtener nombre del estudiante de la DB
+        const { rows: estudianteRows } = await pool.query(
+            'SELECT nombre FROM gestion_fuas WHERE rut = $1',
+            [rut]
+        );
+        const nombreEstudiante = estudianteRows.length > 0 ? estudianteRows[0].nombre : null;
+
+        // Subir a Google Drive con nombre del estudiante
+        const resultado = await driveService.subirDocumentoEstudiante(req.file.buffer, rut, nombreEstudiante);
+
+        // Actualizar base de datos
+        await pool.query(
+            `UPDATE gestion_fuas 
+             SET documento_url = $1, 
+                 estado = 'documento_pendiente', 
+                 fecha_documento = NOW(), 
+                 comentario_rechazo = NULL 
+             WHERE rut = $2`,
+            [resultado.url, rut]
+        );
+
+        console.log(`✅ Documento subido para ${nombreEstudiante || rut}: ${resultado.url}`);
+
+        res.json({
+            exitoso: true,
+            url: resultado.url,
+            urlVer: resultado.urlVer,
+            id: resultado.id
+        });
+    } catch (err) {
+        console.error('❌ Error subiendo documento:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Subir documento de cita (asistente social)
+app.post('/api/citas/:id/documento', upload.single('archivo'), async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!req.file) {
+            return res.status(400).json({ error: 'No se recibió archivo' });
+        }
+
+        // Obtener datos de la cita con nombres
+        const { rows } = await pool.query(`
+            SELECT 
+                c.rut_estudiante,
+                c.rut_asistente,
+                e.nombre as nombre_estudiante,
+                a.nombre as nombre_asistente
+            FROM citas c
+            LEFT JOIN gestion_fuas e ON c.rut_estudiante = e.rut
+            LEFT JOIN asistentes_sociales a ON c.rut_asistente = a.rut
+            WHERE c.id = $1
+        `, [id]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Cita no encontrada' });
+        }
+
+        const { nombre_estudiante, nombre_asistente } = rows[0];
+
+        console.log(`📤 Subiendo documento para cita ${id}...`);
+        console.log(`   Asistente: ${nombre_asistente}, Estudiante: ${nombre_estudiante}`);
+
+        // Subir a Google Drive (crea estructura carpetas: Asistente/Estudiante/archivo.pdf)
+        const resultado = await driveService.subirDocumentoCita(
+            req.file.buffer,
+            id,
+            nombre_asistente,
+            nombre_estudiante
+        );
+
+        // Actualizar cita con URL del documento
+        await pool.query(
+            'UPDATE citas SET documento_url = $1, actualizado_en = NOW() WHERE id = $2',
+            [resultado.url, id]
+        );
+
+        console.log(`✅ Documento de cita subido: ${resultado.url}`);
+
+        res.json({
+            exitoso: true,
+            url: resultado.url,
+            urlVer: resultado.urlVer,
+            id: resultado.id
+        });
+    } catch (err) {
+        console.error('❌ Error subiendo documento cita:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.get('/api/citas/estudiante/:rut', async (req, res) => {
@@ -556,31 +690,31 @@ app.post('/api/auth/sync-estudiante', async (req, res) => {
         const { rut, correo, nombre, roles } = req.body;
         if (!rut) return res.status(400).json({ error: 'RUT requerido' });
 
-        // Verificar si existe
-        const { rows } = await pool.query('SELECT rut FROM estudiantes WHERE rut = $1', [rut]);
+        // Verificar si existe en gestion_fuas
+        const { rows } = await pool.query('SELECT rut, estado FROM gestion_fuas WHERE rut = $1', [rut]);
 
         if (rows.length > 0) {
             // Actualizar existente
             await pool.query(
-                `UPDATE estudiantes 
+                `UPDATE gestion_fuas 
                  SET correo = $2, nombre = $3, roles = $4, actualizado_en = NOW()
                  WHERE rut = $1`,
                 [rut, correo, nombre, JSON.stringify(roles)]
             );
             console.log(`✅ Estudiante actualizado: ${rut}`);
         } else {
-            // Crear nuevo
+            // Crear nuevo con estado 'sin_pendientes'
             await pool.query(
-                `INSERT INTO estudiantes (rut, correo, nombre, roles)
-                 VALUES ($1, $2, $3, $4)`,
+                `INSERT INTO gestion_fuas (rut, correo, nombre, roles, estado, creado_en, actualizado_en)
+                 VALUES ($1, $2, $3, $4, 'sin_pendientes', NOW(), NOW())`,
                 [rut, correo, nombre, JSON.stringify(roles)]
             );
             console.log(`✅ Estudiante creado: ${rut}`);
         }
 
-        // Obtener estado FUAS si existe
+        // Obtener estado FUAS completo
         const { rows: fuasRows } = await pool.query(
-            'SELECT estado, tipo_beneficio, carrera FROM gestion_fuas WHERE rut = $1',
+            'SELECT estado, tipo_beneficio, carrera, sede, documento_url FROM gestion_fuas WHERE rut = $1',
             [rut]
         );
 
@@ -771,7 +905,7 @@ app.get('/api/citas/asistente/:rut', async (req, res) => {
             SELECT c.*, 
             json_build_object('nombre', e.nombre, 'correo', e.correo, 'rut', e.rut) as estudiantes
             FROM citas c
-            LEFT JOIN estudiantes e ON c.rut_estudiante = e.rut
+            LEFT JOIN gestion_fuas e ON c.rut_estudiante = e.rut
             WHERE c.rut_asistente = $1
             ORDER BY c.inicio ASC
         `
@@ -788,7 +922,7 @@ app.get('/api/citas/hoy/:rut', async (req, res) => {
             SELECT c.*, 
             json_build_object('nombre', e.nombre, 'correo', e.correo, 'rut', e.rut) as estudiantes
             FROM citas c
-            LEFT JOIN estudiantes e ON c.rut_estudiante = e.rut
+            LEFT JOIN gestion_fuas e ON c.rut_estudiante = e.rut
             WHERE c.rut_asistente = $1
             AND c.inicio::date = CURRENT_DATE
             ORDER BY c.inicio ASC
@@ -807,21 +941,24 @@ app.put('/api/citas/:id', async (req, res) => {
         const keys = Object.keys(updates)
         if (keys.length === 0) return res.status(400).json({ error: 'No updates provided' })
 
-        // Añadir actualizado_en
-        updates.actualizado_en = new Date()
-        const keysWithDate = [...keys, 'actualizado_en']
+        // Construir query dinámicamente
+        const setClause = keys.map((key, i) => `${key} = $${i + 2}`).join(', ')
+        const values = [id, ...keys.map(k => updates[k])]
 
-        const setClause = keysWithDate.map((key, i) => `${key} = $${i + 2}`).join(', ')
-        const values = [id, ...Object.values(updates), updates.actualizado_en]
+        // Agregar actualizado_en al final
+        const setClauseFinal = setClause + `, actualizado_en = NOW()`
 
         const { rowCount } = await pool.query(
-            `UPDATE citas SET ${setClause} WHERE id = $1`,
+            `UPDATE citas SET ${setClauseFinal} WHERE id = $1`,
             values
         )
 
         if (rowCount === 0) return res.status(404).json({ error: 'Cita no encontrada' })
         res.json({ success: true })
-    } catch (err) { res.status(500).json({ error: err.message }) }
+    } catch (err) {
+        console.error('Error actualizando cita:', err)
+        res.status(500).json({ error: err.message })
+    }
 })
 
 // Citas en Rango
