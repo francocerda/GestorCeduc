@@ -121,10 +121,6 @@ export function parsearCSVMinisterio(contenido: string): ResultadoParseCSV {
         let dv = indiceDv !== -1 ? (columnas[indiceDv] || '') : ''
         dv = dv.replace(/[.\-\s]/g, '').toUpperCase()
 
-        // Si no hay columna DV separada, puede estar concatenado
-        if (!dv && rut.length > 7) {
-            // Algunos formatos ponen todo junto
-        }
 
         // Obtener tipo/formulario (tercera columna o la que corresponda)
         const tipo = indiceTipo !== -1 ? (columnas[indiceTipo] || '') :

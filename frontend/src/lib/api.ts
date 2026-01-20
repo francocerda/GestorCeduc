@@ -9,7 +9,8 @@ import type {
     Cita,
     GestionFUAS,
     DatosMinisterio,
-    DatosInstituto
+    DatosInstituto,
+    HorarioAtencion
 } from '../types/database';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
@@ -219,6 +220,44 @@ export const api = {
         return res.json();
     },
 
+    async getAsistente(rut: string): Promise<AsistenteSocial> {
+        const res = await fetch(`${API_URL}/asistentes/${rut}`);
+        if (!res.ok) throw new Error('Error obteniendo asistente');
+        return res.json();
+    },
+
+    async getHorarioAsistente(rut: string): Promise<{ horario_atencion: HorarioAtencion | null; sede: string | null }> {
+        const res = await fetch(`${API_URL}/asistentes/${rut}/horario`);
+        if (!res.ok) throw new Error('Error obteniendo horario');
+        return res.json();
+    },
+
+    async actualizarHorarioAsistente(rut: string, horario: HorarioAtencion): Promise<{ exitoso: boolean; horario_atencion: HorarioAtencion }> {
+        const res = await fetch(`${API_URL}/asistentes/${rut}/horario`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ horario_atencion: horario })
+        });
+        if (!res.ok) throw new Error('Error actualizando horario');
+        return res.json();
+    },
+
+    async actualizarSedeAsistente(rut: string, sede: string): Promise<{ exitoso: boolean; sede: string }> {
+        const res = await fetch(`${API_URL}/asistentes/${rut}/sede`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sede })
+        });
+        if (!res.ok) throw new Error('Error actualizando sede');
+        return res.json();
+    },
+
+    async getSedes(): Promise<string[]> {
+        const res = await fetch(`${API_URL}/sedes`);
+        if (!res.ok) throw new Error('Error obteniendo sedes');
+        return res.json();
+    },
+
     // ==========================================
     // GESTIÓN CITAS (useCitas)
     // ==========================================
@@ -260,9 +299,11 @@ export const api = {
         return res.ok;
     },
 
-    async cancelarCita(id: string): Promise<boolean> {
+    async cancelarCita(id: string, motivo?: string): Promise<boolean> {
         const res = await fetch(`${API_URL}/citas/${id}/cancelar`, {
-            method: 'PUT'
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ motivo })
         });
         return res.ok;
     },
@@ -291,6 +332,38 @@ export const api = {
             body: JSON.stringify({ documento_url: url })
         });
         if (!res.ok) throw new Error('Error registrando documento');
+        return res.json();
+    },
+
+    // Subir documento a Google Drive (nuevo)
+    async subirDocumentoEstudiante(archivo: File, rut: string): Promise<{ exitoso: boolean; url: string; id: string }> {
+        const formData = new FormData();
+        formData.append('archivo', archivo);
+
+        const res = await fetch(`${API_URL}/documentos/estudiante/${rut}`, {
+            method: 'POST',
+            body: formData
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || 'Error subiendo documento');
+        }
+        return res.json();
+    },
+
+    // Subir documento de cita (asistente)
+    async subirDocumentoCita(archivo: File, citaId: string): Promise<{ exitoso: boolean; url: string; id: string }> {
+        const formData = new FormData();
+        formData.append('archivo', archivo);
+
+        const res = await fetch(`${API_URL}/citas/${citaId}/documento`, {
+            method: 'POST',
+            body: formData
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || 'Error subiendo documento');
+        }
         return res.json();
     },
 
@@ -334,5 +407,165 @@ export const api = {
             body: JSON.stringify({ ruts })
         });
         return res.ok;
+    },
+
+    // ==========================================
+    // SERVICIOS DE EMAIL (via Backend)
+    // ==========================================
+
+    /**
+     * Envía notificaciones FUAS masivas a múltiples estudiantes
+     */
+    async enviarNotificacionesMasivas(
+        estudiantes: Array<{ rut: string; nombre: string; correo: string }>
+    ): Promise<{ exitosos: number; fallidos: number; resultados: Array<{ rut: string; exito: boolean; mensaje: string }> }> {
+        const res = await fetch(`${API_URL}/email/notificaciones-masivas`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ estudiantes })
+        });
+        if (!res.ok) throw new Error('Error enviando notificaciones');
+        return res.json();
+    },
+
+    /**
+     * Envía recordatorios FUAS masivos a estudiantes que no han postulado
+     */
+    async enviarRecordatoriosMasivosFUAS(
+        estudiantes: Array<{ rut: string; nombre: string; correo: string }>
+    ): Promise<{ exitosos: number; fallidos: number; resultados: Array<{ rut: string; exito: boolean; mensaje: string }> }> {
+        const res = await fetch(`${API_URL}/email/recordatorios-masivos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ estudiantes })
+        });
+        if (!res.ok) throw new Error('Error enviando recordatorios');
+        return res.json();
+    },
+
+    /**
+     * Verifica conexión con el servicio de email
+     */
+    async verificarConexionEmail(): Promise<boolean> {
+        try {
+            const res = await fetch(`${API_URL}/email/verificar`);
+            const data = await res.json();
+            return data.conectado === true;
+        } catch {
+            return false;
+        }
+    },
+
+    // ==========================================
+    // DIRECTORIO ESTUDIANTES (Nueva funcionalidad)
+    // ==========================================
+
+    /**
+     * Obtiene directorio completo de estudiantes con filtros
+     */
+    async getDirectorioEstudiantes(filtros: {
+        busqueda?: string;
+        sede?: string;
+        estado?: string;
+        limite?: number;
+        offset?: number;
+    } = {}): Promise<{
+        estudiantes: Array<{
+            rut: string;
+            nombre: string;
+            correo: string;
+            telefono: string | null;
+            sede: string;
+            carrera: string | null;
+            estado_fuas: string | null;
+            tipo_beneficio: string | null;
+            ultima_cita: string | null;
+            total_citas: number;
+        }>;
+        total: number;
+        limite: number;
+        offset: number;
+    }> {
+        const params = new URLSearchParams();
+        if (filtros.busqueda) params.append('busqueda', filtros.busqueda);
+        if (filtros.sede) params.append('sede', filtros.sede);
+        if (filtros.estado) params.append('estado', filtros.estado);
+        if (filtros.limite) params.append('limite', String(filtros.limite));
+        if (filtros.offset) params.append('offset', String(filtros.offset));
+
+        const res = await fetch(`${API_URL}/estudiantes/directorio?${params.toString()}`);
+        if (!res.ok) throw new Error('Error obteniendo directorio de estudiantes');
+        return res.json();
+    },
+
+    /**
+     * Obtiene perfil completo de un estudiante con historial
+     */
+    async getPerfilEstudiante(rut: string): Promise<{
+        estudiante: {
+            rut: string;
+            nombre: string;
+            correo: string;
+            telefono: string | null;
+            sede: string;
+            carrera: string | null;
+            jornada: string | null;
+            anno_ingreso: number | null;
+            nivel_actual: number | null;
+            estado_matricula: string | null;
+            estado_fuas: string | null;
+            tipo_beneficio: string | null;
+            debe_postular: boolean;
+            creado_en: string;
+            actualizado_en: string;
+        };
+        historial_citas: Array<{
+            id: string;
+            inicio: string;
+            fin: string;
+            estado: string;
+            motivo: string | null;
+            observaciones: string | null;
+            descripcion_sesion: string | null;
+            documento_url: string | null;
+            nombre_asistente: string;
+        }>;
+    }> {
+        const res = await fetch(`${API_URL}/estudiantes/${rut}/perfil`);
+        if (!res.ok) throw new Error('Error obteniendo perfil del estudiante');
+        return res.json();
+    },
+
+    /**
+     * Envía solicitud de reunión por email a un estudiante
+     */
+    async enviarSolicitudReunion(datos: {
+        estudiante: {
+            rut: string;
+            nombre: string;
+            correo: string;
+        };
+        asistente: {
+            rut: string;
+            nombre: string;
+            sede?: string;
+        };
+        motivo: string;
+        mensaje?: string;
+    }): Promise<{
+        exito: boolean;
+        mensaje: string;
+        transactionId?: string;
+    }> {
+        const res = await fetch(`${API_URL}/email/solicitar-reunion`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(datos)
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.mensaje || 'Error enviando solicitud de reunión');
+        }
+        return res.json();
     }
 };

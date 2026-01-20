@@ -28,10 +28,13 @@ export interface EstudianteFUASCruce {
     nombre: string
     correo: string
     carrera: string | null
+    sede: string | null
     origen: string | null
+    estado: string | null
     tipo_beneficio: string | null
-    debe_postular: boolean
-    fecha_cruce: string
+    documento_url?: string | null
+    notificacion_enviada?: boolean
+    fecha_cruce?: string
 }
 
 export interface ResultadoCruce {
@@ -373,5 +376,145 @@ export async function marcarNotificadosFUAS(ruts: string[]): Promise<boolean> {
     } catch (error) {
         console.error('❌ Error marcando notificados FUAS:', error)
         return false
+    }
+}
+
+// ============================================
+// BENEFICIOS (Preselección)
+// ============================================
+
+export interface BeneficioItem {
+    tipo: string
+    detalle: string | null
+}
+
+export interface EstudianteConBeneficios {
+    rut: string
+    nombre: string
+    correo: string
+    sede: string | null
+    carrera: string | null
+    beneficios: BeneficioItem[]
+    notificado: boolean
+}
+
+export interface ResultadoCruceBeneficios {
+    exito: boolean
+    totalPreseleccion: number
+    totalMatriculados: number
+    estudiantesConBeneficios: number
+    sinBeneficios: number
+    estudiantes: EstudianteConBeneficios[]
+    error?: string
+}
+
+export interface ResultadoNotificacionBeneficios {
+    exito: boolean
+    enviados: number
+    fallidos: number
+    errores: { rut: string; error: string }[]
+}
+
+/**
+ * Cruza datos de preselección con estudiantes matriculados
+ */
+export async function cruzarBeneficios(datosPreseleccion: unknown[]): Promise<ResultadoCruceBeneficios> {
+    try {
+        const response = await fetch(`${BACKEND_URL}/api/beneficios/cruzar`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ estudiantes: datosPreseleccion })
+        })
+
+        if (!response.ok) {
+            const errorData = await response.json()
+            throw new Error(errorData.error || 'Error en cruce de beneficios')
+        }
+
+        return await response.json()
+    } catch (error) {
+        console.error('❌ Error cruzando beneficios:', error)
+        return {
+            exito: false,
+            totalPreseleccion: 0,
+            totalMatriculados: 0,
+            estudiantesConBeneficios: 0,
+            sinBeneficios: 0,
+            estudiantes: [],
+            error: error instanceof Error ? error.message : 'Error desconocido'
+        }
+    }
+}
+
+/**
+ * Envía notificaciones masivas de beneficios
+ */
+export async function notificarBeneficiosMasivos(
+    estudiantes: EstudianteConBeneficios[],
+    anoProceso?: number
+): Promise<ResultadoNotificacionBeneficios> {
+    try {
+        const response = await fetch(`${BACKEND_URL}/api/beneficios/notificar`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                estudiantes, 
+                anoProceso: anoProceso || new Date().getFullYear() 
+            })
+        })
+
+        if (!response.ok) {
+            const errorData = await response.json()
+            throw new Error(errorData.error || 'Error enviando notificaciones')
+        }
+
+        return await response.json()
+    } catch (error) {
+        console.error('❌ Error enviando notificaciones de beneficios:', error)
+        return {
+            exito: false,
+            enviados: 0,
+            fallidos: 0,
+            errores: [{ rut: 'general', error: error instanceof Error ? error.message : 'Error desconocido' }]
+        }
+    }
+}
+
+/**
+ * Guarda el cruce de beneficios en la BD
+ */
+export async function guardarCruceBeneficios(
+    estudiantes: EstudianteConBeneficios[],
+    anoProceso?: number
+): Promise<{ exito: boolean; actualizados: number; mensaje: string }> {
+    try {
+        const response = await fetch(`${BACKEND_URL}/api/beneficios/guardar-cruce`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                estudiantes, 
+                anoProceso: anoProceso || new Date().getFullYear() 
+            })
+        })
+
+        if (!response.ok) {
+            const errorData = await response.json()
+            throw new Error(errorData.error || 'Error guardando cruce')
+        }
+
+        return await response.json()
+    } catch (error) {
+        console.error('❌ Error guardando cruce de beneficios:', error)
+        return {
+            exito: false,
+            actualizados: 0,
+            mensaje: error instanceof Error ? error.message : 'Error desconocido'
+        }
     }
 }

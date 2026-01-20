@@ -26,7 +26,7 @@ const upload = multer({
 });
 
 const app = express()
-const PORT = process.env.PORT || 3001
+const PORT = process.env.PORT
 
 // Middleware
 app.use(cors({
@@ -36,12 +36,24 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ limit: '50mb', extended: true }))
 
+// Configuración inicial
+const port = process.env.PORT || 3001;
+const dbConfig = {
+    user: process.env.DB_USER,
+    host: process.env.DB_HOST,
+    database: process.env.SQL_DATABASE,
+    password: process.env.DB_PASSWORD,
+    port: process.env.DB_PORT,
+};
+
+console.log('🔑 [Startup] ELASTIC_EMAIL_API_KEY:', process.env.ELASTIC_EMAIL_API_KEY ? 'Cargada correctamente (Termina en ' + process.env.ELASTIC_EMAIL_API_KEY.slice(-4) + ')' : '❌ NO ENCONTRADA');
+
 // Configuración SQL Server (Legacy)
 const sqlConfig = {
     user: process.env.SQL_USER,
     password: process.env.SQL_PASSWORD,
     server: process.env.SQL_SERVER,
-    database: process.env.SQL_DATABASE || 'master',
+    database: process.env.SQL_DATABASE,
     options: {
         encrypt: false,
         trustServerCertificate: true,
@@ -408,6 +420,145 @@ app.post('/api/marcar-notificado-fuas', async (req, res) => {
 // ENDPOINTS PORTAL ESTUDIANTE
 // ============================================
 
+// IMPORTANTE: Los endpoints con path específico deben ir ANTES del endpoint con :rut
+// para evitar que :rut capture "directorio" o "perfil" como un RUT
+
+// Obtener directorio completo de estudiantes con filtros
+app.get('/api/estudiantes/directorio', async (req, res) => {
+    try {
+        const { busqueda, sede, estado, limite = 50, offset = 0 } = req.query
+        
+        let whereConditions = []
+        let params = []
+        let paramIndex = 1
+
+        // Filtro de búsqueda
+        if (busqueda && busqueda.trim()) {
+            whereConditions.push(`(
+                g.rut ILIKE $${paramIndex} OR 
+                g.nombre ILIKE $${paramIndex} OR 
+                g.correo ILIKE $${paramIndex}
+            )`)
+            params.push(`%${busqueda.trim()}%`)
+            paramIndex++
+        }
+
+        // Filtro de sede
+        if (sede && sede !== 'todas') {
+            whereConditions.push(`g.sede = $${paramIndex}`)
+            params.push(sede)
+            paramIndex++
+        }
+
+        // Filtro de estado
+        if (estado && estado !== 'todos') {
+            if (estado === 'con_pendientes') {
+                whereConditions.push(`g.estado IN ('debe_acreditar', 'no_postulo', 'documento_pendiente', 'documento_rechazado')`)
+            } else if (estado === 'sin_pendientes') {
+                whereConditions.push(`g.estado IN ('sin_pendientes', 'documento_validado', 'acreditado')`)
+            } else {
+                // Filtro exacto por estado
+                whereConditions.push(`g.estado = $${paramIndex}`)
+                params.push(estado)
+                paramIndex++
+            }
+        }
+
+        const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : ''
+
+        // Query principal
+        const query = `
+            SELECT 
+                g.rut,
+                g.nombre,
+                g.correo,
+                g.carrera,
+                g.sede,
+                g.anio_ingreso,
+                g.estado as estado_fuas,
+                g.origen,
+                g.tipo_beneficio,
+                (SELECT COUNT(*) FROM citas c WHERE c.rut_estudiante = g.rut) as total_citas,
+                (SELECT MAX(c2.inicio) FROM citas c2 WHERE c2.rut_estudiante = g.rut) as ultima_cita
+            FROM gestion_fuas g
+            ${whereClause}
+            ORDER BY g.nombre ASC
+            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+        `
+        params.push(parseInt(limite), parseInt(offset))
+
+        // Query de conteo
+        const countQuery = `SELECT COUNT(*) FROM gestion_fuas g ${whereClause}`
+        const countParams = params.slice(0, -2) // Sin limit y offset
+
+        const [dataResult, countResult] = await Promise.all([
+            pool.query(query, params),
+            pool.query(countQuery, countParams)
+        ])
+
+        res.json({
+            estudiantes: dataResult.rows,
+            total: parseInt(countResult.rows[0].count),
+            limite: parseInt(limite),
+            offset: parseInt(offset)
+        })
+    } catch (err) {
+        console.error('Error en directorio:', err)
+        res.status(500).json({ error: err.message })
+    }
+})
+
+// Obtener perfil completo de un estudiante (antes del :rut genérico)
+app.get('/api/estudiantes/:rut/perfil', async (req, res) => {
+    try {
+        const { rut } = req.params
+
+        // Datos del estudiante
+        const estudianteQuery = await pool.query(`
+            SELECT 
+                g.*,
+                di.carrera as carrera_instituto,
+                di.sede as sede_instituto,
+                di.anio_ingreso as anio_ingreso_instituto
+            FROM gestion_fuas g
+            LEFT JOIN datos_instituto di ON g.rut = di.rut
+            WHERE g.rut = $1
+        `, [rut])
+
+        if (estudianteQuery.rows.length === 0) {
+            return res.status(404).json({ error: 'Estudiante no encontrado' })
+        }
+
+        // Historial de citas
+        const citasQuery = await pool.query(`
+            SELECT 
+                c.id,
+                c.inicio,
+                c.fin,
+                c.estado,
+                c.motivo,
+                c.observaciones,
+                c.descripcion_sesion,
+                c.documento_url,
+                a.nombre as nombre_asistente
+            FROM citas c
+            LEFT JOIN asistentes_sociales a ON c.rut_asistente = a.rut
+            WHERE c.rut_estudiante = $1
+            ORDER BY c.inicio DESC
+            LIMIT 10
+        `, [rut])
+
+        res.json({
+            estudiante: estudianteQuery.rows[0],
+            historial_citas: citasQuery.rows
+        })
+    } catch (err) {
+        console.error('Error obteniendo perfil:', err)
+        res.status(500).json({ error: err.message })
+    }
+})
+
+// Obtener estudiante por RUT (genérico - debe ir DESPUÉS de los endpoints específicos)
 app.get('/api/estudiantes/:rut', async (req, res) => {
     try {
         const { rut } = req.params;
@@ -577,11 +728,46 @@ app.get('/api/citas/estudiante/:rut', async (req, res) => {
 app.put('/api/citas/:id/cancelar', async (req, res) => {
     try {
         const { id } = req.params;
+        const { motivo } = req.body; // Motivo opcional
+
+        // 1. Obtener datos de la cita y del estudiante ANTES de cancelar
+        const queryInfo = `
+            SELECT 
+                c.inicio,
+                e.nombre,
+                e.correo
+            FROM citas c
+            LEFT JOIN gestion_fuas e ON c.rut_estudiante = e.rut
+            WHERE c.id = $1
+        `;
+        const { rows: info } = await pool.query(queryInfo, [id]);
+
+        console.log('🔍 [Debug] Datos recuperados para cancelación:', info.length > 0 ? info[0] : 'Ninguno');
+
+        if (info.length === 0) return res.status(404).json({ error: 'Cita no encontrada' });
+
+        const cita = info[0];
+
+        // 2. Cancelar la cita
         const { rows } = await pool.query(
-            "UPDATE citas SET estado = 'cancelada', actualizado_en = NOW() WHERE id = $1 RETURNING *",
-            [id]
+            "UPDATE citas SET estado = 'cancelada', motivo = COALESCE($2, motivo), actualizado_en = NOW() WHERE id = $1 RETURNING *",
+            [id, motivo]
         );
-        if (rows.length === 0) return res.status(404).json({ error: 'Cita no encontrada' });
+
+        // 3. Enviar correo de notificación
+        if (cita.correo) {
+            console.log(`📧 [Debug] Iniciando envío de correo a ${cita.correo}`);
+            const emailService = require('./services/emailService');
+            emailService.sendCancellationEmail(
+                cita.correo,
+                cita.nombre || 'Estudiante',
+                cita.inicio,
+                motivo
+            ).catch(err => console.error('Error enviando correo:', err));
+        } else {
+            console.warn('⚠️ [Debug] No se puede enviar correo: Estudiante sin email o no encontrado');
+        }
+
         res.json(true);
     } catch (err) { res.status(500).json({ error: err.message }) }
 });
@@ -726,6 +912,278 @@ app.post('/api/auth/sync-estudiante', async (req, res) => {
         });
     } catch (err) {
         console.error('Error sync estudiante:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============================================
+// ENDPOINTS EMAIL (Elastic Email)
+// ============================================
+
+const emailService = require('./services/emailService');
+
+// Enviar notificación FUAS a un estudiante
+app.post('/api/email/notificacion-fuas', async (req, res) => {
+    try {
+        const { estudiante } = req.body;
+        if (!estudiante || !estudiante.correo) {
+            return res.status(400).json({ exito: false, mensaje: 'Datos de estudiante requeridos' });
+        }
+        const resultado = await emailService.enviarNotificacionFUAS(estudiante);
+        res.json(resultado);
+    } catch (err) {
+        console.error('Error enviando notificación FUAS:', err);
+        res.status(500).json({ exito: false, mensaje: err.message });
+    }
+});
+
+// Enviar notificaciones FUAS masivas
+app.post('/api/email/notificaciones-masivas', async (req, res) => {
+    try {
+        const { estudiantes } = req.body;
+        if (!estudiantes || !Array.isArray(estudiantes) || estudiantes.length === 0) {
+            return res.status(400).json({ exitosos: 0, fallidos: 0, mensaje: 'Lista de estudiantes requerida' });
+        }
+        console.log(`📬 Recibida solicitud para enviar ${estudiantes.length} notificaciones...`);
+        const resultado = await emailService.enviarNotificacionesMasivas(estudiantes);
+        res.json(resultado);
+    } catch (err) {
+        console.error('Error enviando notificaciones masivas:', err);
+        res.status(500).json({ exitosos: 0, fallidos: 0, mensaje: err.message });
+    }
+});
+
+// Enviar recordatorio FUAS a un estudiante
+app.post('/api/email/recordatorio-fuas', async (req, res) => {
+    try {
+        const { estudiante } = req.body;
+        if (!estudiante || !estudiante.correo) {
+            return res.status(400).json({ exito: false, mensaje: 'Datos de estudiante requeridos' });
+        }
+        const resultado = await emailService.enviarRecordatorioFUAS(estudiante);
+        res.json(resultado);
+    } catch (err) {
+        console.error('Error enviando recordatorio FUAS:', err);
+        res.status(500).json({ exito: false, mensaje: err.message });
+    }
+});
+
+// Enviar recordatorios FUAS masivos
+app.post('/api/email/recordatorios-masivos', async (req, res) => {
+    try {
+        const { estudiantes } = req.body;
+        if (!estudiantes || !Array.isArray(estudiantes) || estudiantes.length === 0) {
+            return res.status(400).json({ exitosos: 0, fallidos: 0, mensaje: 'Lista de estudiantes requerida' });
+        }
+        console.log(`📬 Recibida solicitud para enviar ${estudiantes.length} recordatorios...`);
+        const resultado = await emailService.enviarRecordatoriosMasivosFUAS(estudiantes);
+        res.json(resultado);
+    } catch (err) {
+        console.error('Error enviando recordatorios masivos:', err);
+        res.status(500).json({ exitosos: 0, fallidos: 0, mensaje: err.message });
+    }
+});
+
+// Verificar conexión con servicio de email
+app.get('/api/email/verificar', async (req, res) => {
+    try {
+        const conectado = await emailService.verificarConexion();
+        res.json({ conectado });
+    } catch (err) {
+        res.json({ conectado: false });
+    }
+});
+
+// Enviar solicitud de reunión a estudiante
+app.post('/api/email/solicitar-reunion', async (req, res) => {
+    try {
+        const { estudiante, asistente, motivo, mensaje } = req.body;
+
+        if (!estudiante || !asistente || !motivo) {
+            return res.status(400).json({ 
+                exito: false, 
+                mensaje: 'Faltan datos requeridos (estudiante, asistente, motivo)' 
+            });
+        }
+
+        if (!estudiante.correo) {
+            return res.status(400).json({ 
+                exito: false, 
+                mensaje: 'El estudiante no tiene correo electrónico registrado' 
+            });
+        }
+
+        const resultado = await emailService.enviarSolicitudReunion({
+            estudiante,
+            asistente,
+            motivo,
+            mensaje: mensaje || ''
+        });
+
+        if (resultado.exito) {
+            // Registrar en log (opcional)
+            console.log(`📧 Solicitud de reunión enviada: ${asistente.nombre} -> ${estudiante.correo} (${motivo})`);
+        }
+
+        res.json(resultado);
+    } catch (err) {
+        console.error('Error enviando solicitud de reunión:', err);
+        res.status(500).json({ exito: false, mensaje: err.message });
+    }
+});
+
+// ============================================
+// ENDPOINTS BENEFICIOS (Preselección)
+// ============================================
+
+/**
+ * POST /api/beneficios/cruzar
+ * Cruza datos de preselección nacional con estudiantes matriculados
+ */
+app.post('/api/beneficios/cruzar', async (req, res) => {
+    try {
+        const { estudiantes: datosPreseleccion } = req.body;
+
+        if (!datosPreseleccion || !Array.isArray(datosPreseleccion)) {
+            return res.status(400).json({ error: 'Se requiere array de estudiantes' });
+        }
+
+        console.log(`🔄 Cruzando ${datosPreseleccion.length} registros de preselección con estudiantes matriculados...`);
+
+        // Obtener todos los estudiantes matriculados de la institución
+        const { rows: matriculados } = await pool.query(`
+            SELECT rut, nombre, correo, sede, carrera, estado_matricula
+            FROM gestion_fuas
+            WHERE correo IS NOT NULL AND correo != ''
+        `);
+
+        console.log(`📊 Estudiantes matriculados con correo: ${matriculados.length}`);
+
+        // Crear mapa de RUTs matriculados para búsqueda rápida
+        const matriculadosMap = new Map();
+        for (const est of matriculados) {
+            const rutLimpio = limpiarRut(est.rut);
+            matriculadosMap.set(rutLimpio, est);
+        }
+
+        // Cruzar datos
+        const estudiantesCruzados = [];
+        let sinBeneficios = 0;
+
+        for (const presel of datosPreseleccion) {
+            const rutLimpio = limpiarRut(presel.rut);
+            const matriculado = matriculadosMap.get(rutLimpio);
+
+            if (matriculado) {
+                // Construir lista de beneficios
+                const beneficios = [];
+                if (presel.gratuidad) beneficios.push({ tipo: 'gratuidad', detalle: presel.gratuidad });
+                if (presel.bvp) beneficios.push({ tipo: 'bvp', detalle: presel.bvp });
+                if (presel.bb) beneficios.push({ tipo: 'bb', detalle: presel.bb });
+                if (presel.bea) beneficios.push({ tipo: 'bea', detalle: presel.bea });
+                if (presel.bdte) beneficios.push({ tipo: 'bdte', detalle: presel.bdte });
+                if (presel.bjgm) beneficios.push({ tipo: 'bjgm', detalle: presel.bjgm });
+                if (presel.bnm) beneficios.push({ tipo: 'bnm', detalle: presel.bnm });
+                if (presel.bhpe) beneficios.push({ tipo: 'bhpe', detalle: presel.bhpe });
+                if (presel.fscu) beneficios.push({ tipo: 'fscu', detalle: presel.fscu });
+
+                if (beneficios.length > 0) {
+                    estudiantesCruzados.push({
+                        rut: matriculado.rut,
+                        nombre: matriculado.nombre || presel.nombreCompleto,
+                        correo: matriculado.correo,
+                        sede: matriculado.sede,
+                        carrera: matriculado.carrera,
+                        beneficios,
+                        notificado: false
+                    });
+                } else {
+                    sinBeneficios++;
+                }
+            }
+        }
+
+        console.log(`✅ Cruce completado: ${estudiantesCruzados.length} estudiantes con beneficios encontrados`);
+
+        res.json({
+            exito: true,
+            totalPreseleccion: datosPreseleccion.length,
+            totalMatriculados: matriculados.length,
+            estudiantesConBeneficios: estudiantesCruzados.length,
+            sinBeneficios,
+            estudiantes: estudiantesCruzados
+        });
+    } catch (err) {
+        console.error('Error en cruce de beneficios:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+/**
+ * POST /api/beneficios/notificar
+ * Envía notificaciones masivas de beneficios a estudiantes
+ */
+app.post('/api/beneficios/notificar', async (req, res) => {
+    try {
+        const { estudiantes, anoProceso } = req.body;
+
+        if (!estudiantes || !Array.isArray(estudiantes) || estudiantes.length === 0) {
+            return res.status(400).json({ error: 'Se requiere array de estudiantes con beneficios' });
+        }
+
+        console.log(`📧 Enviando notificaciones de beneficios a ${estudiantes.length} estudiantes...`);
+
+        const emailService = require('./services/emailService');
+        const resultado = await emailService.enviarNotificacionesBeneficiosMasivas(estudiantes, anoProceso);
+
+        console.log(`✅ Notificaciones enviadas: ${resultado.exitosos} exitosos, ${resultado.fallidos} fallidos`);
+
+        res.json({
+            exito: true,
+            enviados: resultado.exitosos,
+            fallidos: resultado.fallidos,
+            errores: resultado.errores
+        });
+    } catch (err) {
+        console.error('Error enviando notificaciones de beneficios:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+/**
+ * POST /api/beneficios/guardar-cruce
+ * Guarda el resultado del cruce en la BD para registro histórico
+ */
+app.post('/api/beneficios/guardar-cruce', async (req, res) => {
+    try {
+        const { estudiantes, anoProceso } = req.body;
+
+        if (!estudiantes || !Array.isArray(estudiantes)) {
+            return res.status(400).json({ error: 'Se requiere array de estudiantes' });
+        }
+
+        // Actualizar el campo tipo_beneficio en gestion_fuas para cada estudiante
+        let actualizados = 0;
+        for (const est of estudiantes) {
+            const beneficiosStr = est.beneficios.map(b => b.tipo).join(', ');
+            const { rowCount } = await pool.query(`
+                UPDATE gestion_fuas 
+                SET tipo_beneficio = $1, actualizado_en = NOW()
+                WHERE rut = $2
+            `, [beneficiosStr, est.rut]);
+            
+            if (rowCount > 0) actualizados++;
+        }
+
+        console.log(`💾 Cruce guardado: ${actualizados} estudiantes actualizados`);
+
+        res.json({
+            exito: true,
+            actualizados,
+            mensaje: `Se actualizaron ${actualizados} registros con información de beneficios`
+        });
+    } catch (err) {
+        console.error('Error guardando cruce de beneficios:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -877,6 +1335,117 @@ app.get('/api/asistentes-sociales', async (req, res) => {
     try {
         const { rows } = await pool.query('SELECT * FROM asistentes_sociales WHERE activo = true ORDER BY nombre ASC')
         res.json(rows)
+    } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// Obtener asistente por RUT
+app.get('/api/asistentes/:rut', async (req, res) => {
+    try {
+        const { rut } = req.params
+        const { rows } = await pool.query('SELECT * FROM asistentes_sociales WHERE rut = $1', [rut])
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Asistente no encontrado' })
+        }
+        res.json(rows[0])
+    } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// Obtener horario de un asistente
+app.get('/api/asistentes/:rut/horario', async (req, res) => {
+    try {
+        const { rut } = req.params
+        const { rows } = await pool.query('SELECT horario_atencion, sede FROM asistentes_sociales WHERE rut = $1', [rut])
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Asistente no encontrado' })
+        }
+        res.json({ 
+            horario_atencion: rows[0].horario_atencion,
+            sede: rows[0].sede 
+        })
+    } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// Actualizar horario de un asistente
+app.put('/api/asistentes/:rut/horario', async (req, res) => {
+    try {
+        const { rut } = req.params
+        const { horario_atencion } = req.body
+
+        if (!horario_atencion) {
+            return res.status(400).json({ error: 'Horario requerido' })
+        }
+
+        // Validar estructura del horario
+        const diasValidos = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes']
+        for (const dia of diasValidos) {
+            if (horario_atencion[dia] && !Array.isArray(horario_atencion[dia])) {
+                return res.status(400).json({ error: `Formato inválido para ${dia}` })
+            }
+            if (horario_atencion[dia]) {
+                for (const bloque of horario_atencion[dia]) {
+                    if (!bloque.inicio || !bloque.fin) {
+                        return res.status(400).json({ error: `Bloque inválido en ${dia}` })
+                    }
+                }
+            }
+        }
+
+        const { rows } = await pool.query(
+            `UPDATE asistentes_sociales 
+             SET horario_atencion = $2, actualizado_en = NOW()
+             WHERE rut = $1
+             RETURNING horario_atencion`,
+            [rut, JSON.stringify(horario_atencion)]
+        )
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Asistente no encontrado' })
+        }
+
+        console.log(`✅ Horario actualizado para asistente: ${rut}`)
+        res.json({ exitoso: true, horario_atencion: rows[0].horario_atencion })
+    } catch (err) {
+        console.error('Error actualizando horario:', err)
+        res.status(500).json({ error: err.message })
+    }
+})
+
+// Actualizar sede de un asistente
+app.put('/api/asistentes/:rut/sede', async (req, res) => {
+    try {
+        const { rut } = req.params
+        const { sede } = req.body
+
+        const { rows } = await pool.query(
+            `UPDATE asistentes_sociales 
+             SET sede = $2, actualizado_en = NOW()
+             WHERE rut = $1
+             RETURNING sede`,
+            [rut, sede]
+        )
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Asistente no encontrado' })
+        }
+
+        console.log(`✅ Sede actualizada para asistente: ${rut} -> ${sede}`)
+        res.json({ exitoso: true, sede: rows[0].sede })
+    } catch (err) {
+        console.error('Error actualizando sede:', err)
+        res.status(500).json({ error: err.message })
+    }
+})
+
+// Obtener sedes únicas para filtros
+app.get('/api/sedes', async (req, res) => {
+    try {
+        const { rows } = await pool.query(`
+            SELECT DISTINCT sede FROM gestion_fuas WHERE sede IS NOT NULL AND sede != ''
+            UNION
+            SELECT DISTINCT sede FROM asistentes_sociales WHERE sede IS NOT NULL AND sede != ''
+            ORDER BY sede ASC
+        `)
+        res.json(rows.map(r => r.sede))
     } catch (err) { res.status(500).json({ error: err.message }) }
 })
 

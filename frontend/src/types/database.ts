@@ -82,15 +82,16 @@ export interface DatosInstituto {
   cargado_por: string | null
 }
 
-// Tabla unificada gestion_fuas
+// Tabla unificada gestion_fuas (contiene todos los estudiantes)
 export type OrigenFUAS = 'acreditacion' | 'fuas_nacional'
 export type EstadoGestionFUAS =
-  | 'debe_acreditar'       // CSV Acreditación → necesita cita
-  | 'no_postulo'           // CSV FUAS Nacional → debe subir doc
-  | 'documento_pendiente'  // Subió doc, esperando validación
-  | 'documento_validado'   // Doc aprobado
-  | 'documento_rechazado'  // Doc rechazado, puede re-subir
-  | 'acreditado'           // Ya acreditó con asistente
+  | 'sin_pendientes'        // Estudiante normal, sin alertas FUAS
+  | 'debe_acreditar'        // CSV Acreditación → necesita cita
+  | 'no_postulo'            // CSV FUAS Nacional → debe subir doc
+  | 'documento_pendiente'   // Subió doc, esperando validación
+  | 'documento_validado'    // Doc aprobado
+  | 'documento_rechazado'   // Doc rechazado, puede re-subir
+  | 'acreditado'            // Ya acreditó con asistente
 
 export interface GestionFUAS {
   rut: string
@@ -98,8 +99,10 @@ export interface GestionFUAS {
   correo: string | null
   carrera: string | null
   sede: string | null
-  origen: OrigenFUAS
-  estado: EstadoGestionFUAS
+  roles: Role[] | null
+  anio_ingreso: number | null
+  origen: OrigenFUAS | null
+  estado: EstadoGestionFUAS | null
   tipo_beneficio: string | null
   documento_url: string | null
   fecha_documento: string | null
@@ -107,7 +110,9 @@ export interface GestionFUAS {
   comentario_rechazo: string | null
   notificacion_enviada: boolean
   fecha_notificacion: string | null
-  fecha_cruce: string
+  fecha_cruce: string | null
+  creado_en?: string
+  actualizado_en?: string
 }
 
 // Alias para compatibilidad temporal

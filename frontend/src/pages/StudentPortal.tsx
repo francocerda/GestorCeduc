@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/ui/Toast'
 import { api } from '../lib/api'
 import { formatDateTime, formatDateShort } from '../lib/dateUtils'
-import { subirComprobanteFUAS, validarArchivoPDF } from '../lib/storageService'
+import { validarArchivoPDF } from '../lib/storageService'
 import type { Estudiante, EstadoCita, AsistenteSocial, EstadoGestionFUAS } from '../types/database'
 import Card from '../components/ui/Card'
 import Badge, { getCitaStatusVariant, getCitaStatusLabel } from '../components/ui/Badge'
@@ -13,7 +13,7 @@ import Button from '../components/ui/Button'
 // Tipo para datos de gestión FUAS
 interface GestionFUASData {
   rut: string
-  estado: EstadoGestionFUAS
+  estado: EstadoGestionFUAS | null
   documento_url: string | null
   comentario_rechazo: string | null
 }
@@ -136,8 +136,8 @@ export default function StudentPortal() {
       </header>
 
       <main id="main-content" className="max-w-5xl mx-auto px-4 py-8">
-        {/* Alerta Gestión FUAS - con opción de subir comprobante */}
-        {gestionFUASData && (
+        {/* Alerta Gestión FUAS - solo si tiene pendientes (no mostrar para 'sin_pendientes') */}
+        {gestionFUASData && gestionFUASData.estado && gestionFUASData.estado !== 'sin_pendientes' && (
           <div className={`border rounded-lg p-4 mb-6 ${gestionFUASData.estado === 'documento_validado' || gestionFUASData.estado === 'acreditado'
             ? 'bg-green-50 border-green-200'
             : gestionFUASData.estado === 'documento_rechazado'
@@ -227,16 +227,12 @@ export default function StudentPortal() {
 
                             setSubiendoComprobante(true)
                             try {
-                              const resultado = await subirComprobanteFUAS(archivoComprobante, user.rut)
+                              // Subir directamente a Google Drive
+                              const resultado = await api.subirDocumentoEstudiante(archivoComprobante, user.rut)
 
                               if (!resultado.exitoso) {
-                                toast.error(resultado.error || 'Error al subir documento')
+                                toast.error('Error al subir documento')
                                 return
-                              }
-
-                              // Llamada al backend
-                              if (resultado.url) {
-                                await api.registrarDocumento(user.rut, resultado.url)
                               }
 
                               toast.exito('Comprobante subido correctamente')

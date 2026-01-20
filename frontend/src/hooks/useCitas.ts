@@ -114,11 +114,11 @@ export function useCitas() {
         }
     }, [])
 
-    // Cancelar una cita
-    const cancelarCita = useCallback(async (id: string): Promise<boolean> => {
+    // Cancelar una cita (con notificación por email al estudiante)
+    const cancelarCita = useCallback(async (id: string, motivo?: string): Promise<boolean> => {
         setCargando(true)
         try {
-            const exito = await api.cancelarCita(id)
+            const exito = await api.cancelarCita(id, motivo)
             if (!exito) throw new Error('Error al cancelar')
             return true
         } catch (err) {
@@ -131,9 +131,13 @@ export function useCitas() {
     }, [])
 
     // Cambiar estado de una cita
-    const cambiarEstadoCita = useCallback(async (id: string, nuevoEstado: EstadoCita): Promise<boolean> => {
+    // Si el estado es 'cancelada', usa el endpoint específico que envía email
+    const cambiarEstadoCita = useCallback(async (id: string, nuevoEstado: EstadoCita, motivo?: string): Promise<boolean> => {
+        if (nuevoEstado === 'cancelada') {
+            return cancelarCita(id, motivo)
+        }
         return actualizarCita(id, { estado: nuevoEstado })
-    }, [actualizarCita])
+    }, [actualizarCita, cancelarCita])
 
     // Completar cita con documento y descripción (Feature B)
     const completarCitaConDocumento = useCallback(async (

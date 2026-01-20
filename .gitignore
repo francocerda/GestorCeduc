@@ -4,6 +4,7 @@ backend/node_modules/
 docs/
 frontend/dist/
 backend/dist/
+backend/dev/
 frontend/build/
 CONTEXTO_SESION.md
 

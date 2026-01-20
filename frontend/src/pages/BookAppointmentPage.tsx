@@ -5,7 +5,7 @@ import { useCitas } from '../hooks/useCitas'
 import { useAsistentesSociales } from '../hooks/useStudents'
 import { api } from '../lib/api'
 import { formatDateLong, toUTC } from '../lib/dateUtils'
-import type { AsistenteSocial, Cita, CitaInsert } from '../types/database'
+import type { AsistenteSocial, Cita, CitaInsert, HorarioAtencion } from '../types/database'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import TimeSlotPicker from '../components/features/TimeSlotPicker'
@@ -18,6 +18,7 @@ export default function BookAppointmentPage() {
 
     const [asistentes, setAsistentes] = useState<AsistenteSocial[]>([])
     const [selectedAsistente, setSelectedAsistente] = useState<AsistenteSocial | null>(null)
+    const [horarioAsistente, setHorarioAsistente] = useState<HorarioAtencion | null>(null)
     const [selectedDate, setSelectedDate] = useState<string>('')
     const [existingCitas, setExistingCitas] = useState<Cita[]>([])
     const [selectedSlot, setSelectedSlot] = useState<{ start: Date; end: Date } | null>(null)
@@ -38,6 +39,25 @@ export default function BookAppointmentPage() {
         }
         cargarAsistentes()
     }, [fetchAsistentes])
+
+    // Load assistant's schedule when selected
+    useEffect(() => {
+        const cargarHorario = async () => {
+            if (!selectedAsistente) {
+                setHorarioAsistente(null)
+                return
+            }
+            
+            try {
+                const data = await api.getHorarioAsistente(selectedAsistente.rut)
+                setHorarioAsistente(data.horario_atencion)
+            } catch (error) {
+                console.error('Error cargando horario:', error)
+                setHorarioAsistente(null)
+            }
+        }
+        cargarHorario()
+    }, [selectedAsistente])
 
     // Load existing appointments when date/asistente changes
     useEffect(() => {
@@ -285,6 +305,7 @@ export default function BookAppointmentPage() {
                                             existingAppointments={existingCitas}
                                             onSelectSlot={handleSelectSlot}
                                             selectedSlot={selectedSlot}
+                                            horarioAsistente={horarioAsistente}
                                         />
                                     </div>
                                 )}
