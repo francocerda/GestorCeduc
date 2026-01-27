@@ -37,7 +37,7 @@ export interface ResultadoDeteccion {
     totalMatriculados: number;
     totalPostulantes: number;
     noPostularon: number;
-    estudiantes: { rut: string; nombre: string }[];
+    estudiantes: GestionFUAS[];
     mensaje: string;
 }
 

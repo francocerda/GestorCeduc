@@ -118,24 +118,31 @@ app.get('/api/sync-instituto', async (req, res) => {
             return res.json({ exitoso: true, total: 0, mensaje: 'No se encontraron estudiantes' })
         }
 
-        const datosParaInsertar = estudiantes.map(est => {
-            const nombreCompleto = [
-                est.nombres_socionegocio,
-                est.apaterno_socionegocio,
-                est.amaterno_socionegocio
-            ].filter(Boolean).join(' ').trim()
+        // Mapear estudiantes y eliminar duplicados por RUT
+        const estudiantesMap = new Map();
+        estudiantes.forEach(est => {
+            const rut = limpiarRut(est.rut);
+            if (rut && !estudiantesMap.has(rut)) {
+                const nombreCompleto = [
+                    est.nombres_socionegocio,
+                    est.apaterno_socionegocio,
+                    est.amaterno_socionegocio
+                ].filter(Boolean).join(' ').trim();
 
-            return [
-                limpiarRut(est.rut),
-                nombreCompleto || null,
-                est.Correo || null,
-                est.nombre_carrera || null,
-                est.CODSEDE || null,
-                est.anio_ingreso || 2026,
-                new Date()
-            ]
-        }).filter(row => row[0]);
+                estudiantesMap.set(rut, [
+                    rut,
+                    nombreCompleto || null,
+                    est.Correo || null,
+                    est.nombre_carrera || null,
+                    est.CODSEDE || null,
+                    est.anio_ingreso || 2026,
+                    new Date()
+                ]);
+            }
+        });
 
+        const datosParaInsertar = Array.from(estudiantesMap.values());
+        console.log(`${estudiantes.length - datosParaInsertar.length} duplicados eliminados`);
         console.log('Guardando en PostgreSQL datos_instituto...')
         const BATCH_SIZE = 500
         let insertados = 0
@@ -357,11 +364,21 @@ app.post('/api/detectar-no-postulantes', async (req, res) => {
 
         await client.query('COMMIT');
 
+        // Obtener los estudiantes con datos completos para la respuesta
+        const { rows: estudiantesCompletos } = await client.query(
+            `SELECT rut, nombre, correo, carrera, sede, estado, documento_url, notificacion_enviada 
+             FROM gestion_fuas WHERE estado = 'no_postulo' ORDER BY nombre`
+        );
+
+        const totalPostulantes = setPostulantes.size;
+
         res.json({
             exitoso: true,
             totalMatriculados: todos.length,
+            totalPostulantes: totalPostulantes,
             noPostularon: noPostularon.length,
-            estudiantes: noPostularon.map(r => ({ rut: r[0], nombre: r[1] }))
+            mensaje: `Detección completada: ${noPostularon.length} estudiantes no postularon`,
+            estudiantes: estudiantesCompletos
         })
 
     } catch (error) {
@@ -373,13 +390,16 @@ app.post('/api/detectar-no-postulantes', async (req, res) => {
     }
 })
 
-// Listar No Postulantes
+// Listar No Postulantes y estudiantes con documentos pendientes
 app.get('/api/no-postulantes', async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT * FROM gestion_fuas 
             WHERE origen = 'fuas_nacional' 
-            ORDER BY nombre ASC
+               OR estado IN ('documento_pendiente', 'documento_validado', 'documento_rechazado')
+            ORDER BY 
+                CASE WHEN estado = 'documento_pendiente' THEN 0 ELSE 1 END,
+                nombre ASC
         `);
         res.json({ exitoso: true, total: result.rows.length, estudiantes: result.rows })
     } catch (error) {

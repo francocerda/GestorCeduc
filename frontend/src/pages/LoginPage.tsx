@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../contexts/AuthContext"
 import { ceducApi } from "../lib/ceducApi"
@@ -20,6 +20,14 @@ export default function LoginPage() {
 
     const { signIn, user, isAsistenteSocial } = useAuth()
     const navigate = useNavigate()
+
+    // Redirección por rol (en useEffect para evitar setState durante render)
+    useEffect(() => {
+        if (user) {
+            const targetRoute = isAsistenteSocial ? '/asistente' : '/estudiante'
+            navigate(targetRoute, { replace: true })
+        }
+    }, [user, isAsistenteSocial, navigate])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -48,12 +56,6 @@ export default function LoginPage() {
         } finally {
             setLoading(false)
         }
-    }
-
-    // Redirección por rol
-    if (user) {
-        const targetRoute = isAsistenteSocial ? '/asistente' : '/estudiante'
-        navigate(targetRoute, { replace: true })
     }
 
     const handlePasswordRecovery = async () => {
