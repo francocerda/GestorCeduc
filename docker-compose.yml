@@ -1,0 +1,124 @@
+# Docker Compose - GestorCeduc FUAS
+# Uso: docker-compose up -d
+
+version: '3.8'
+
+services:
+  # ============================================
+  # BASE DE DATOS POSTGRESQL
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: gestorceduc-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-gestor_user}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-gestor_password_segura}
+      POSTGRES_DB: ${PG_DATABASE:-gestor_ceduc}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-gestor_user} -d ${PG_DATABASE:-gestor_ceduc}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gestorceduc-network
+
+  # ============================================
+  # BACKEND (Node.js + Express)
+  # ============================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gestorceduc-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # PostgreSQL
+      PG_USER: ${PG_USER:-gestor_user}
+      PG_PASSWORD: ${PG_PASSWORD:-gestor_password_segura}
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_DATABASE: ${PG_DATABASE:-gestor_ceduc}
+      # Server
+      PORT: 3001
+      NODE_ENV: production
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      # Google Drive
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REFRESH_TOKEN: ${GOOGLE_REFRESH_TOKEN}
+      DRIVE_FOLDER_ESTUDIANTES: ${DRIVE_FOLDER_ESTUDIANTES}
+      DRIVE_FOLDER_ASISTENTES: ${DRIVE_FOLDER_ASISTENTES}
+      # Elastic Email
+      ELASTIC_EMAIL_API_KEY: ${ELASTIC_EMAIL_API_KEY}
+      EMAIL_REMITENTE: ${EMAIL_REMITENTE:-notificaciones@ceduc.cl}
+      # SQL Server (opcional - sync instituto)
+      SQL_SERVER: ${SQL_SERVER:-}
+      SQL_USER: ${SQL_USER:-}
+      SQL_PASSWORD: ${SQL_PASSWORD:-}
+      SQL_DATABASE: ${SQL_DATABASE:-}
+    ports:
+      - "3001:3001"
+    networks:
+      - gestorceduc-network
+
+  # ============================================
+  # FRONTEND (React + Nginx)
+  # ============================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3001/api}
+    container_name: gestorceduc-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    networks:
+      - gestorceduc-network
+
+  # ============================================
+  # NGINX REVERSE PROXY (Opcional - para HTTPS)
+  # ============================================
+  # nginx-proxy:
+  #   image: nginx:alpine
+  #   container_name: gestorceduc-proxy
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx-proxy.conf:/etc/nginx/nginx.conf:ro
+  #     - ./certbot/conf:/etc/letsencrypt:ro
+  #     - ./certbot/www:/var/www/certbot:ro
+  #   depends_on:
+  #     - frontend
+  #     - backend
+  #   networks:
+  #     - gestorceduc-network
+
+# ============================================
+# VOLÚMENES PERSISTENTES
+# ============================================
+volumes:
+  postgres_data:
+    name: gestorceduc-postgres-data
+
+# ============================================
+# RED
+# ============================================
+networks:
+  gestorceduc-network:
+    name: gestorceduc-network
+    driver: bridge
