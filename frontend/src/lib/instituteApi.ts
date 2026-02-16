@@ -264,7 +264,7 @@ export interface GestionFUASResult {
     carrera: string | null
     sede: string | null
     origen: 'acreditacion' | 'fuas_nacional'
-    estado: 'debe_acreditar' | 'no_postulo' | 'documento_pendiente' | 'documento_validado' | 'documento_rechazado' | 'acreditado'
+    estado: 'debe_acreditar' | 'no_postulo' | 'postulo' | 'documento_pendiente' | 'documento_validado' | 'documento_rechazado' | 'acreditado'
     tipo_beneficio: string | null
     documento_url: string | null
     fecha_documento: string | null
@@ -283,8 +283,10 @@ export interface ResultadoDeteccion {
     totalMatriculados: number
     totalPostulantes: number
     noPostularon: number
-    guardados: number
-    estudiantes: GestionFUASResult[]
+    siPostularon: number
+    guardados?: number
+    estudiantes: GestionFUASResult[]           // No postulantes
+    estudiantesPostularon: GestionFUASResult[]  // Sí postularon
     mensaje: string
     error?: string
 }
@@ -318,17 +320,24 @@ export async function detectarNoPostulantes(
             totalMatriculados: 0,
             totalPostulantes: 0,
             noPostularon: 0,
-            guardados: 0,
+            siPostularon: 0,
             estudiantes: [],
+            estudiantesPostularon: [],
             mensaje: error instanceof Error ? error.message : 'Error desconocido'
         }
     }
 }
 
 /**
- * Obtiene lista de estudiantes que no postularon a FUAS
+ * Obtiene lista de estudiantes FUAS (postulantes y no postulantes)
  */
-export async function getNoPostulantes(): Promise<{ exitoso: boolean; total: number; estudiantes: NoPostulanteResult[] }> {
+export async function getNoPostulantes(): Promise<{ 
+    exitoso: boolean; 
+    total: number; 
+    estudiantes: NoPostulanteResult[];
+    totalPostularon?: number;
+    totalNoPostularon?: number;
+}> {
     try {
         const response = await fetch(`${BACKEND_URL}/api/no-postulantes`, {
             method: 'GET',
@@ -339,16 +348,18 @@ export async function getNoPostulantes(): Promise<{ exitoso: boolean; total: num
 
         if (!response.ok) {
             const errorData = await response.json()
-            throw new Error(errorData.mensaje || 'Error obteniendo no postulantes')
+            throw new Error(errorData.mensaje || 'Error obteniendo estudiantes FUAS')
         }
 
         return await response.json()
     } catch (error) {
-        console.error('❌ Error obteniendo no postulantes:', error)
+        console.error('❌ Error obteniendo estudiantes FUAS:', error)
         return {
             exitoso: false,
             total: 0,
-            estudiantes: []
+            estudiantes: [],
+            totalPostularon: 0,
+            totalNoPostularon: 0
         }
     }
 }
@@ -420,12 +431,30 @@ export interface ResultadoNotificacionBeneficios {
  */
 export async function cruzarBeneficios(datosPreseleccion: unknown[]): Promise<ResultadoCruceBeneficios> {
     try {
+        // Optimizar payload: solo enviar campos necesarios para el cruce
+        // El CSV nacional tiene 500K+ filas, enviar todo causa PayloadTooLarge
+        const datosOptimizados = (datosPreseleccion as any[]).map(d => ({
+            rut: d.rut,
+            nombreCompleto: d.nombreCompleto || '',
+            gratuidad: d.gratuidad || null,
+            bvp: d.bvp || null,
+            bb: d.bb || null,
+            bea: d.bea || null,
+            bdte: d.bdte || null,
+            bjgm: d.bjgm || null,
+            bnm: d.bnm || null,
+            bhpe: d.bhpe || null,
+            fscu: d.fscu || null
+        }))
+
+        console.log(`📤 Enviando ${datosOptimizados.length} registros optimizados para cruce...`)
+
         const response = await fetch(`${BACKEND_URL}/api/beneficios/cruzar`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ estudiantes: datosPreseleccion })
+            body: JSON.stringify({ estudiantes: datosOptimizados })
         })
 
         if (!response.ok) {

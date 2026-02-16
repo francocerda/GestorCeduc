@@ -6,6 +6,7 @@ interface CardProps {
     title?: string
     subtitle?: string
     actions?: React.ReactNode
+    noPadding?: boolean
 }
 
 export default function Card({
@@ -13,18 +14,19 @@ export default function Card({
     className = '',
     title,
     subtitle,
-    actions
+    actions,
+    noPadding = false
 }: CardProps) {
     return (
-        <div className={`bg-white rounded-xl shadow-md overflow-hidden ${className}`}>
+        <div className={`bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden transition-shadow hover:shadow-md ${className}`}>
             {(title || actions) && (
-                <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                <div className="px-6 py-4 border-b border-slate-100/80 flex justify-between items-center">
                     <div>
                         {title && (
-                            <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+                            <h3 className="text-base font-semibold text-slate-900">{title}</h3>
                         )}
                         {subtitle && (
-                            <p className="text-sm text-gray-500 mt-0.5">{subtitle}</p>
+                            <p className="text-sm text-slate-400 mt-0.5">{subtitle}</p>
                         )}
                     </div>
                     {actions && (
@@ -34,7 +36,7 @@ export default function Card({
                     )}
                 </div>
             )}
-            <div className="p-6">
+            <div className={noPadding ? '' : 'p-6'}>
                 {children}
             </div>
         </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Button from '../ui/Button'
 import type { HorarioAtencion } from '../../types/database'
 
@@ -6,113 +6,184 @@ interface ScheduleEditorProps {
     horarioInicial: HorarioAtencion | null
     onSave: (horario: HorarioAtencion) => Promise<void>
     loading?: boolean
+    readOnly?: boolean
 }
 
 type DiaSemana = 'lunes' | 'martes' | 'miercoles' | 'jueves' | 'viernes'
 
-const DIAS: { key: DiaSemana; label: string }[] = [
-    { key: 'lunes', label: 'Lunes' },
-    { key: 'martes', label: 'Martes' },
-    { key: 'miercoles', label: 'Miércoles' },
-    { key: 'jueves', label: 'Jueves' },
-    { key: 'viernes', label: 'Viernes' }
+const DIAS: { key: DiaSemana; label: string; short: string }[] = [
+    { key: 'lunes', label: 'Lunes', short: 'Lun' },
+    { key: 'martes', label: 'Martes', short: 'Mar' },
+    { key: 'miercoles', label: 'Miércoles', short: 'Mié' },
+    { key: 'jueves', label: 'Jueves', short: 'Jue' },
+    { key: 'viernes', label: 'Viernes', short: 'Vie' }
 ]
 
-const HORAS_OPCIONES = [
-    '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-    '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
-    '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00'
-]
-
-const HORARIO_DEFECTO: HorarioAtencion = {
-    lunes: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '18:00' }],
-    martes: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '18:00' }],
-    miercoles: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '18:00' }],
-    jueves: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '18:00' }],
-    viernes: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '17:00' }]
+// Generar bloques de 30 minutos
+const generarBloques = (): string[] => {
+    const bloques: string[] = []
+    
+    // Mañana: 9:00 a 13:00
+    for (let h = 9; h < 13; h++) {
+        bloques.push(`${h.toString().padStart(2, '0')}:00`)
+        bloques.push(`${h.toString().padStart(2, '0')}:30`)
+    }
+    
+    // Tarde: 14:00 a 18:00
+    for (let h = 14; h < 18; h++) {
+        bloques.push(`${h.toString().padStart(2, '0')}:00`)
+        bloques.push(`${h.toString().padStart(2, '0')}:30`)
+    }
+    
+    return bloques
 }
 
-export default function ScheduleEditor({ horarioInicial, onSave, loading }: ScheduleEditorProps) {
-    const [horario, setHorario] = useState<HorarioAtencion>(horarioInicial || HORARIO_DEFECTO)
-    const [diasActivos, setDiasActivos] = useState<Record<DiaSemana, boolean>>({
-        lunes: true,
-        martes: true,
-        miercoles: true,
-        jueves: true,
-        viernes: true
+const BLOQUES_30MIN = generarBloques()
+const BLOQUES_MANANA = BLOQUES_30MIN.filter(b => {
+    const h = parseInt(b.split(':')[0])
+    return h >= 9 && h < 13
+})
+const BLOQUES_TARDE = BLOQUES_30MIN.filter(b => {
+    const h = parseInt(b.split(':')[0])
+    return h >= 14 && h < 18
+})
+
+const INTERVALO_MINUTOS = 30
+
+export default function ScheduleEditor({ horarioInicial, onSave, loading, readOnly = false }: ScheduleEditorProps) {
+    const [seleccionados, setSeleccionados] = useState<Record<DiaSemana, Set<string>>>({
+        lunes: new Set(),
+        martes: new Set(),
+        miercoles: new Set(),
+        jueves: new Set(),
+        viernes: new Set()
     })
     const [guardando, setGuardando] = useState(false)
     const [cambiosPendientes, setCambiosPendientes] = useState(false)
+    const [isDragging, setIsDragging] = useState(false)
+    const [dragMode, setDragMode] = useState<'select' | 'deselect'>('select')
+
+    const convertirDesdeRangos = useCallback((horario: HorarioAtencion): Record<DiaSemana, Set<string>> => {
+        const resultado: Record<DiaSemana, Set<string>> = {
+            lunes: new Set(), martes: new Set(), miercoles: new Set(), jueves: new Set(), viernes: new Set()
+        }
+
+        DIAS.forEach(({ key }) => {
+            const bloquesDia = horario[key] || []
+            bloquesDia.forEach(bloque => {
+                const [inicioH, inicioM] = bloque.inicio.split(':').map(Number)
+                const [finH, finM] = bloque.fin.split(':').map(Number)
+                
+                BLOQUES_30MIN.forEach(slot => {
+                    const [slotH, slotM] = slot.split(':').map(Number)
+                    const slotMinutos = slotH * 60 + slotM
+                    const inicioMinutos = inicioH * 60 + inicioM
+                    const finMinutos = finH * 60 + finM
+                    
+                    if (slotMinutos >= inicioMinutos && slotMinutos < finMinutos) {
+                        resultado[key].add(slot)
+                    }
+                })
+            })
+        })
+
+        return resultado
+    }, [])
+
+    const convertirARangos = useCallback((sel: Record<DiaSemana, Set<string>>): HorarioAtencion => {
+        const horario: HorarioAtencion = {}
+
+        DIAS.forEach(({ key }) => {
+            const bloquesOrdenados = Array.from(sel[key]).sort()
+            if (bloquesOrdenados.length === 0) return
+
+            const rangos: { inicio: string; fin: string }[] = []
+            let inicioRango = bloquesOrdenados[0]
+            let ultimoBloque = bloquesOrdenados[0]
+
+            for (let i = 1; i < bloquesOrdenados.length; i++) {
+                const bloqueActual = bloquesOrdenados[i]
+                const [ultimoH, ultimoM] = ultimoBloque.split(':').map(Number)
+                const [actualH, actualM] = bloqueActual.split(':').map(Number)
+                
+                if ((actualH * 60 + actualM) - (ultimoH * 60 + ultimoM) > INTERVALO_MINUTOS) {
+                    const finMinutos = ultimoH * 60 + ultimoM + INTERVALO_MINUTOS
+                    rangos.push({
+                        inicio: inicioRango,
+                        fin: `${Math.floor(finMinutos / 60).toString().padStart(2, '0')}:${(finMinutos % 60).toString().padStart(2, '0')}`
+                    })
+                    inicioRango = bloqueActual
+                }
+                ultimoBloque = bloqueActual
+            }
+
+            const [ultimoH, ultimoM] = ultimoBloque.split(':').map(Number)
+            const finMinutos = ultimoH * 60 + ultimoM + INTERVALO_MINUTOS
+            rangos.push({
+                inicio: inicioRango,
+                fin: `${Math.floor(finMinutos / 60).toString().padStart(2, '0')}:${(finMinutos % 60).toString().padStart(2, '0')}`
+            })
+
+            horario[key] = rangos
+        })
+
+        return horario
+    }, [])
 
     useEffect(() => {
         if (horarioInicial) {
-            setHorario(horarioInicial)
-            // Detectar qué días están activos (tienen bloques)
-            const activos: Record<DiaSemana, boolean> = {
-                lunes: Boolean(horarioInicial.lunes?.length),
-                martes: Boolean(horarioInicial.martes?.length),
-                miercoles: Boolean(horarioInicial.miercoles?.length),
-                jueves: Boolean(horarioInicial.jueves?.length),
-                viernes: Boolean(horarioInicial.viernes?.length)
-            }
-            setDiasActivos(activos)
+            setSeleccionados(convertirDesdeRangos(horarioInicial))
+            setCambiosPendientes(false)
         }
-    }, [horarioInicial])
+    }, [horarioInicial, convertirDesdeRangos])
 
-    const toggleDia = (dia: DiaSemana) => {
-        setDiasActivos(prev => {
-            const nuevo = { ...prev, [dia]: !prev[dia] }
-            // Si se activa, agregar bloque por defecto
-            if (!prev[dia]) {
-                setHorario(h => ({
-                    ...h,
-                    [dia]: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '18:00' }]
-                }))
-            } else {
-                // Si se desactiva, limpiar bloques
-                setHorario(h => ({ ...h, [dia]: [] }))
-            }
+    const handleMouseDown = (dia: DiaSemana, bloque: string) => {
+        if (readOnly) return
+        setIsDragging(true)
+        const isSelected = seleccionados[dia].has(bloque)
+        setDragMode(isSelected ? 'deselect' : 'select')
+        
+        setSeleccionados(prev => {
+            const nuevo = { ...prev }
+            const set = new Set(prev[dia])
+            isSelected ? set.delete(bloque) : set.add(bloque)
+            nuevo[dia] = set
             return nuevo
         })
         setCambiosPendientes(true)
     }
 
-    const actualizarBloque = (dia: DiaSemana, index: number, campo: 'inicio' | 'fin', valor: string) => {
-        setHorario(prev => {
-            const bloques = [...(prev[dia] || [])]
-            bloques[index] = { ...bloques[index], [campo]: valor }
-            return { ...prev, [dia]: bloques }
+    const handleMouseEnter = (dia: DiaSemana, bloque: string) => {
+        if (!isDragging || readOnly) return
+        
+        setSeleccionados(prev => {
+            const nuevo = { ...prev }
+            const set = new Set(prev[dia])
+            dragMode === 'select' ? set.add(bloque) : set.delete(bloque)
+            nuevo[dia] = set
+            return nuevo
         })
         setCambiosPendientes(true)
     }
 
-    const agregarBloque = (dia: DiaSemana) => {
-        setHorario(prev => {
-            const bloques = [...(prev[dia] || [])]
-            // Intentar agregar después del último bloque
-            const ultimoBloque = bloques[bloques.length - 1]
-            let nuevoInicio = '14:00'
-            let nuevoFin = '18:00'
-            
-            if (ultimoBloque) {
-                const indexFin = HORAS_OPCIONES.indexOf(ultimoBloque.fin)
-                if (indexFin !== -1 && indexFin < HORAS_OPCIONES.length - 2) {
-                    nuevoInicio = HORAS_OPCIONES[indexFin + 1]
-                    nuevoFin = HORAS_OPCIONES[Math.min(indexFin + 5, HORAS_OPCIONES.length - 1)]
-                }
-            }
-            
-            bloques.push({ inicio: nuevoInicio, fin: nuevoFin })
-            return { ...prev, [dia]: bloques }
-        })
-        setCambiosPendientes(true)
-    }
+    useEffect(() => {
+        const handleMouseUp = () => setIsDragging(false)
+        window.addEventListener('mouseup', handleMouseUp)
+        return () => window.removeEventListener('mouseup', handleMouseUp)
+    }, [])
 
-    const eliminarBloque = (dia: DiaSemana, index: number) => {
-        setHorario(prev => {
-            const bloques = [...(prev[dia] || [])]
-            bloques.splice(index, 1)
-            return { ...prev, [dia]: bloques }
+    const togglePeriodo = (dia: DiaSemana, periodo: 'mañana' | 'tarde') => {
+        if (readOnly) return
+        const bloquesPeriodo = periodo === 'mañana' ? BLOQUES_MANANA : BLOQUES_TARDE
+        
+        setSeleccionados(prev => {
+            const nuevo = { ...prev }
+            const set = new Set(prev[dia])
+            const todosSeleccionados = bloquesPeriodo.every(b => set.has(b))
+            
+            bloquesPeriodo.forEach(b => todosSeleccionados ? set.delete(b) : set.add(b))
+            nuevo[dia] = set
+            return nuevo
         })
         setCambiosPendientes(true)
     }
@@ -120,147 +191,240 @@ export default function ScheduleEditor({ horarioInicial, onSave, loading }: Sche
     const handleGuardar = async () => {
         setGuardando(true)
         try {
-            // Limpiar días inactivos antes de guardar
-            const horarioLimpio: HorarioAtencion = {}
-            DIAS.forEach(({ key }) => {
-                if (diasActivos[key] && horario[key]?.length) {
-                    horarioLimpio[key] = horario[key]
-                }
-            })
-            await onSave(horarioLimpio)
+            await onSave(convertirARangos(seleccionados))
             setCambiosPendientes(false)
         } finally {
             setGuardando(false)
         }
     }
 
-    // Calcular horas totales
-    const calcularHorasTotales = () => {
-        let minutosTotales = 0
-        DIAS.forEach(({ key }) => {
-            if (diasActivos[key] && horario[key]) {
-                horario[key]!.forEach(bloque => {
-                    const [inicioH, inicioM] = bloque.inicio.split(':').map(Number)
-                    const [finH, finM] = bloque.fin.split(':').map(Number)
-                    minutosTotales += (finH * 60 + finM) - (inicioH * 60 + inicioM)
-                })
-            }
-        })
-        return (minutosTotales / 60).toFixed(1)
+    const calcularStats = () => {
+        let total = 0
+        DIAS.forEach(({ key }) => { total += seleccionados[key].size })
+        return { bloques: total, horas: (total * INTERVALO_MINUTOS / 60).toFixed(1) }
+    }
+
+    const stats = calcularStats()
+
+    const renderBloque = (bloque: string, dia: DiaSemana) => {
+        const isSelected = seleccionados[dia].has(bloque)
+        return (
+            <div
+                key={`${dia}-${bloque}`}
+                className={`
+                    h-9 border-l border-slate-200/60 transition-all duration-75 rounded-sm mx-px
+                    ${readOnly ? 'cursor-default' : 'cursor-pointer'}
+                    ${isSelected 
+                        ? 'bg-emerald-400 hover:bg-emerald-500 shadow-inner shadow-emerald-500/20' 
+                        : readOnly 
+                            ? 'bg-slate-50' 
+                            : 'bg-white hover:bg-emerald-50 hover:border-emerald-200'
+                    }
+                `}
+                onMouseDown={() => handleMouseDown(dia, bloque)}
+                onMouseEnter={() => handleMouseEnter(dia, bloque)}
+                title={`${bloque} - ${dia}`}
+            />
+        )
     }
 
     return (
         <div className="space-y-6">
-            {/* Header con resumen */}
-            <div className="flex items-center justify-between p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+            {/* Header */}
+            <div className="flex items-center justify-between">
                 <div>
-                    <h4 className="font-medium text-emerald-800">Horario Semanal</h4>
-                    <p className="text-sm text-emerald-600">
-                        {DIAS.filter(d => diasActivos[d.key]).length} días activos • {calcularHorasTotales()} horas semanales
+                    <h3 className="text-lg font-semibold text-slate-900">
+                        {readOnly ? 'Disponibilidad' : 'Configurar Disponibilidad'}
+                    </h3>
+                    <p className="text-sm text-slate-500 mt-0.5">
+                        <span className="font-semibold text-emerald-600">{stats.horas}h</span> semanales · {stats.bloques} bloques de 30 min
                     </p>
                 </div>
-                {cambiosPendientes && (
-                    <span className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded-full">
-                        Cambios sin guardar
-                    </span>
-                )}
+                <div className="flex items-center gap-3">
+                    {cambiosPendientes && !readOnly && (
+                        <span className="text-xs px-3 py-1.5 bg-amber-50 text-amber-600 rounded-full font-medium border border-amber-200/60 animate-pulse">
+                            Cambios sin guardar
+                        </span>
+                    )}
+                </div>
             </div>
 
-            {/* Editor por día */}
-            <div className="space-y-4">
-                {DIAS.map(({ key, label }) => (
-                    <div key={key} className="border rounded-lg overflow-hidden">
-                        {/* Header del día */}
-                        <div 
-                            className={`flex items-center justify-between p-3 cursor-pointer transition-colors ${
-                                diasActivos[key] ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-200'
-                            }`}
-                            onClick={() => toggleDia(key)}
-                        >
-                            <div className="flex items-center gap-3">
-                                <input
-                                    type="checkbox"
-                                    checked={diasActivos[key]}
-                                    onChange={() => {}}
-                                    className="w-4 h-4 text-emerald-600 rounded cursor-pointer"
-                                />
-                                <span className={`font-medium ${diasActivos[key] ? 'text-gray-900' : 'text-gray-500'}`}>
-                                    {label}
-                                </span>
-                            </div>
-                            {diasActivos[key] && horario[key]?.length ? (
-                                <span className="text-sm text-gray-500">
-                                    {horario[key]!.map(b => `${b.inicio}-${b.fin}`).join(', ')}
-                                </span>
-                            ) : (
-                                <span className="text-sm text-gray-400 italic">No disponible</span>
-                            )}
-                        </div>
+            {/* Instrucción */}
+            {!readOnly && (
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-emerald-50 border border-emerald-200/60 rounded-xl">
+                    <svg className="w-4 h-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-xs text-emerald-700">
+                        Haz clic o arrastra sobre los bloques para marcar tu disponibilidad
+                    </p>
+                </div>
+            )}
 
-                        {/* Bloques de horario */}
-                        {diasActivos[key] && (
-                            <div className="p-4 bg-white space-y-3">
-                                {(horario[key] || []).map((bloque, index) => (
-                                    <div key={index} className="flex items-center gap-3">
-                                        <span className="text-sm text-gray-500 w-16">Bloque {index + 1}</span>
-                                        <select
-                                            value={bloque.inicio}
-                                            onChange={(e) => actualizarBloque(key, index, 'inicio', e.target.value)}
-                                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                                        >
-                                            {HORAS_OPCIONES.map(hora => (
-                                                <option key={hora} value={hora}>{hora}</option>
-                                            ))}
-                                        </select>
-                                        <span className="text-gray-400">a</span>
-                                        <select
-                                            value={bloque.fin}
-                                            onChange={(e) => actualizarBloque(key, index, 'fin', e.target.value)}
-                                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                                        >
-                                            {HORAS_OPCIONES.filter(h => h > bloque.inicio).map(hora => (
-                                                <option key={hora} value={hora}>{hora}</option>
-                                            ))}
-                                        </select>
-                                        <button
-                                            onClick={() => eliminarBloque(key, index)}
-                                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                            title="Eliminar bloque"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                            </svg>
-                                        </button>
-                                    </div>
-                                ))}
-                                
-                                {(horario[key]?.length || 0) < 3 && (
-                                    <button
-                                        onClick={() => agregarBloque(key)}
-                                        className="flex items-center gap-2 text-sm text-emerald-600 hover:text-emerald-700 px-3 py-2 hover:bg-emerald-50 rounded-lg transition-colors"
-                                    >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                        </svg>
-                                        Agregar bloque horario
-                                    </button>
+            {/* Grid */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden select-none bg-white shadow-sm">
+                {/* Header días */}
+                <div className="grid grid-cols-[72px_repeat(5,1fr)] bg-gradient-to-b from-slate-100 to-slate-50 border-b border-slate-200">
+                    <div className="p-3 flex items-center justify-center">
+                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    {DIAS.map(({ key, label, short }) => {
+                        const count = seleccionados[key].size
+                        return (
+                            <div key={key} className="p-3 text-center border-l border-slate-200/60">
+                                <span className="hidden sm:block text-xs font-semibold text-slate-700">{label}</span>
+                                <span className="sm:hidden text-xs font-semibold text-slate-700">{short}</span>
+                                {count > 0 && (
+                                    <span className="block text-[10px] font-medium text-emerald-500 mt-0.5">
+                                        {(count * INTERVALO_MINUTOS / 60).toFixed(1)}h
+                                    </span>
                                 )}
                             </div>
-                        )}
+                        )
+                    })}
+                </div>
+
+                {/* Mañana Header */}
+                <div className="grid grid-cols-[72px_repeat(5,1fr)] bg-slate-50 border-b border-slate-200/60">
+                    <div className="py-2 px-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider flex items-center">
+                        Mañana
+                    </div>
+                    {DIAS.map(({ key }) => {
+                        const todosSeleccionados = BLOQUES_MANANA.every(b => seleccionados[key].has(b))
+                        return (
+                            <button
+                                key={key}
+                                onClick={() => togglePeriodo(key, 'mañana')}
+                                disabled={readOnly}
+                                className={`py-2 px-1 text-[10px] font-medium border-l border-slate-200/60 transition-all
+                                    ${readOnly ? 'cursor-default text-slate-300' : 'hover:bg-emerald-50'}
+                                    ${todosSeleccionados ? 'text-emerald-600' : 'text-slate-400'}
+                                `}
+                            >
+                                {todosSeleccionados ? '✓ Todo' : 'Todos'}
+                            </button>
+                        )
+                    })}
+                </div>
+
+                {/* Bloques Mañana */}
+                {BLOQUES_MANANA.map((bloque) => (
+                    <div key={bloque} className="grid grid-cols-[72px_repeat(5,1fr)]">
+                        <div className="px-3 py-1 text-xs text-right pr-4 flex items-center justify-end">
+                            <span className="text-slate-500 font-medium tabular-nums">{bloque}</span>
+                        </div>
+                        {DIAS.map(({ key }) => renderBloque(bloque, key))}
+                    </div>
+                ))}
+
+                {/* Break almuerzo */}
+                <div className="grid grid-cols-[72px_repeat(5,1fr)] bg-gradient-to-r from-slate-100 to-slate-50 border-y border-slate-300/60">
+                    <div className="py-2.5 px-3 text-[11px] text-slate-400 font-medium text-right pr-4">13:00</div>
+                    {DIAS.map(({ key }) => (
+                        <div key={key} className="py-2.5 text-[11px] text-slate-400 text-center border-l border-slate-200/60 flex items-center justify-center gap-1.5">
+                            <span className="hidden sm:inline">Almuerzo</span>
+                            <span className="sm:hidden">—</span>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Tarde Header */}
+                <div className="grid grid-cols-[72px_repeat(5,1fr)] bg-slate-50 border-b border-slate-200/60">
+                    <div className="py-2 px-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider flex items-center">
+                        Tarde
+                    </div>
+                    {DIAS.map(({ key }) => {
+                        const todosSeleccionados = BLOQUES_TARDE.every(b => seleccionados[key].has(b))
+                        return (
+                            <button
+                                key={key}
+                                onClick={() => togglePeriodo(key, 'tarde')}
+                                disabled={readOnly}
+                                className={`py-2 px-1 text-[10px] font-medium border-l border-slate-200/60 transition-all
+                                    ${readOnly ? 'cursor-default text-slate-300' : 'hover:bg-emerald-50'}
+                                    ${todosSeleccionados ? 'text-emerald-600' : 'text-slate-400'}
+                                `}
+                            >
+                                {todosSeleccionados ? '✓ Todo' : 'Todos'}
+                            </button>
+                        )
+                    })}
+                </div>
+
+                {/* Bloques Tarde */}
+                {BLOQUES_TARDE.map((bloque) => (
+                    <div key={bloque} className="grid grid-cols-[72px_repeat(5,1fr)]">
+                        <div className="px-3 py-1 text-xs text-right pr-4 flex items-center justify-end">
+                            <span className="text-slate-500 font-medium tabular-nums">{bloque}</span>
+                        </div>
+                        {DIAS.map(({ key }) => renderBloque(bloque, key))}
                     </div>
                 ))}
             </div>
 
-            {/* Botón guardar */}
-            <div className="flex justify-end gap-3 pt-4 border-t">
-                <Button
-                    onClick={handleGuardar}
-                    loading={guardando || loading}
-                    disabled={!cambiosPendientes}
-                >
-                    Guardar Horario
-                </Button>
+            {/* Leyenda */}
+            <div className="flex items-center justify-center gap-8 text-xs text-slate-500">
+                <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 bg-emerald-400 rounded-md shadow-sm" />
+                    <span className="font-medium">Disponible</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 bg-white border border-slate-200 rounded-md" />
+                    <span className="font-medium">No disponible</span>
+                </div>
             </div>
+
+            {/* Resumen por día */}
+            <div className="grid grid-cols-5 gap-3">
+                {DIAS.map(({ key, label, short }) => {
+                    const count = seleccionados[key].size
+                    const hrs = (count * INTERVALO_MINUTOS / 60).toFixed(1)
+                    const porcentaje = Math.round((count / BLOQUES_30MIN.length) * 100)
+                    return (
+                        <div 
+                            key={key} 
+                            className={`text-center py-3 px-2 rounded-xl transition-all border ${
+                                count > 0 
+                                    ? 'bg-emerald-50 border-emerald-200/60' 
+                                    : 'bg-slate-50 border-slate-200/40'
+                            }`}
+                        >
+                            <div className="text-xs font-semibold text-slate-600 mb-1">
+                                <span className="hidden sm:inline">{label}</span>
+                                <span className="sm:hidden">{short}</span>
+                            </div>
+                            <div className={`text-lg font-bold ${count > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
+                                {hrs}h
+                            </div>
+                            {count > 0 && (
+                                <div className="mt-1.5">
+                                    <div className="w-full bg-emerald-100 rounded-full h-1.5">
+                                        <div 
+                                            className="bg-emerald-400 h-1.5 rounded-full transition-all duration-300"
+                                            style={{ width: `${Math.min(porcentaje, 100)}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )
+                })}
+            </div>
+
+            {/* Guardar */}
+            {!readOnly && (
+                <div className="flex justify-end pt-4 border-t border-slate-200">
+                    <Button
+                        onClick={handleGuardar}
+                        loading={guardando || loading}
+                        disabled={!cambiosPendientes}
+                    >
+                        {cambiosPendientes ? 'Guardar cambios' : 'Sin cambios'}
+                    </Button>
+                </div>
+            )}
         </div>
     )
 }

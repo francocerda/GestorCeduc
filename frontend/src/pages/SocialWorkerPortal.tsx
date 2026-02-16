@@ -9,6 +9,7 @@ import { parsearCSVMinisterio, leerArchivoComoTexto, validarArchivoCSV, type Res
 import { parsearCSVPostulantesFUAS, validarArchivoCSVFUAS, type ResultadoParseFUAS } from '../lib/csvParserFUAS'
 import { parsearCSVPreseleccion, validarArchivoCSVPreseleccion, type ResultadoParsePreseleccion } from '../lib/csvParserPreseleccion'
 import { formatDateTime, formatDateShort } from '../lib/dateUtils'
+import { exportarDirectorioEstudiantes, exportarCitas, exportarEstudiantesFUAS, exportarEstudiantesConBeneficios } from '../lib/exportUtils'
 import {
     syncEstudiantesInstituto,
     cruzarDatosMinisterio,
@@ -50,7 +51,7 @@ interface CitaConEstudiante {
 }
 
 export default function SocialWorkerPortal() {
-    const { user, signOut } = useAuth()
+    const { user, signOut, isJefaDAE } = useAuth()
     const navigate = useNavigate()
     const toast = useToast()
     const { contarEstudiantesPendientes } = useStudents()
@@ -60,8 +61,15 @@ export default function SocialWorkerPortal() {
     const [citasHoy, setCitasHoy] = useState<CitaConEstudiante[]>([])
     const [todasCitas, setTodasCitas] = useState<CitaConEstudiante[]>([])
     const [pendientesCount, setPendientesCount] = useState(0)
-    const [tabActivo, setTabActivo] = useState<'estudiantes' | 'citas' | 'sincronizar' | 'fuas' | 'beneficios' | 'horario'>('estudiantes')
+    const [tabActivo, setTabActivo] = useState<'estudiantes' | 'citas' | 'sincronizar' | 'fuas' | 'beneficios' | 'horario' | 'horarios-equipo'>('estudiantes')
     const [cargando, setCargando] = useState(true)
+
+    // Horarios equipo (solo jefa DAE)
+    const [asistentesEquipo, setAsistentesEquipo] = useState<import('../types/database').AsistenteSocial[]>([])
+    const [asistenteSeleccionadaEquipo, setAsistenteSeleccionadaEquipo] = useState<string>('')
+    const [horarioEquipo, setHorarioEquipo] = useState<import('../types/database').HorarioAtencion | null>(null)
+    const [cargandoEquipo, setCargandoEquipo] = useState(false)
+    const [sedeEquipo, setSedeEquipo] = useState<string>('')
 
     // Horario del asistente
     const [miHorario, setMiHorario] = useState<import('../types/database').HorarioAtencion | null>(null)
@@ -97,6 +105,9 @@ export default function SocialWorkerPortal() {
     // Modales de perfil y solicitud reunión
     const [estudianteSeleccionadoPerfil, setEstudianteSeleccionadoPerfil] = useState<string | null>(null)
     const [mostrarPerfilModal, setMostrarPerfilModal] = useState(false)
+
+    // Estado de exportación
+    const [exportando, setExportando] = useState(false)
     const [estudianteParaReunion, setEstudianteParaReunion] = useState<{ rut: string; nombre: string; correo: string } | null>(null)
     const [mostrarReunionModal, setMostrarReunionModal] = useState(false)
 
@@ -118,8 +129,8 @@ export default function SocialWorkerPortal() {
     const [busquedaFUAS, setBusquedaFUAS] = useState('')  // Estado separado para búsqueda FUAS
     const ESTUDIANTES_POR_PAGINA = 30
 
-    // Filtrar estudiantes FUAS según búsqueda
-    const estudiantesFUASFiltrados = estudiantesFUAS.filter(est => {
+    // Filtrar estudiantes FUAS de acreditación según búsqueda
+    const estudiantesFUASAcreditFiltrados = estudiantesFUAS.filter(est => {
         if (!busquedaFUAS.trim()) return true
         const termino = busquedaFUAS.toLowerCase().trim()
         return (
@@ -136,27 +147,30 @@ export default function SocialWorkerPortal() {
     const [citaSeleccionada, setCitaSeleccionada] = useState<CitaConEstudiante | null>(null)
     const [mostrarModalCita, setMostrarModalCita] = useState(false)
 
-    // ========== FUAS NO POSTULANTES ==========
+    // ========== FUAS POSTULANTES Y NO POSTULANTES ==========
     const [procesandoCSVFUAS, setProcesandoCSVFUAS] = useState(false)
     const [resultadoCSVFUAS, setResultadoCSVFUAS] = useState<ResultadoParseFUAS | null>(null)
     const [detectandoNoPostulantes, setDetectandoNoPostulantes] = useState(false)
     const [resultadoDeteccion, setResultadoDeteccion] = useState<ResultadoDeteccion | null>(null)
-    const [noPostulantes, setNoPostulantes] = useState<NoPostulanteResult[]>([])
+    const [estudiantesFUASLista, setEstudiantesFUASLista] = useState<NoPostulanteResult[]>([])  // Lista unificada
     const [seleccionadosNP, setSeleccionadosNP] = useState<Set<string>>(new Set())
     const [paginaNP, setPaginaNP] = useState(1)
     const [busquedaNP, setBusquedaNP] = useState('')
     const [enviandoRecordatorio, setEnviandoRecordatorio] = useState(false)
     const [filtroDocumento, setFiltroDocumento] = useState<'todos' | 'sin_doc' | 'pendiente' | 'validado' | 'rechazado'>('todos')
+    const [filtroPostulacion, setFiltroPostulacion] = useState<'todos' | 'postularon' | 'no_postularon'>('todos')  // Nuevo filtro
 
     // Modal de validación de documento
     const [modalValidacion, setModalValidacion] = useState<NoPostulanteResult | null>(null)
     const [validandoDoc, setValidandoDoc] = useState(false)
 
-    // Contador de documentos pendientes de validación
-    const docsPendientes = noPostulantes.filter(e => e.documento_url && e.estado === 'documento_pendiente').length
+    // Contadores
+    const docsPendientes = estudiantesFUASLista.filter(e => e.documento_url && e.estado === 'documento_pendiente').length
+    const totalPostularon = estudiantesFUASLista.filter(e => e.estado === 'postulo').length
+    const totalNoPostularon = estudiantesFUASLista.filter(e => e.estado !== 'postulo').length
 
-    // Filtrar no postulantes según búsqueda Y estado de documento
-    const noPostulantesFiltrados = noPostulantes.filter(est => {
+    // Filtrar estudiantes FUAS según búsqueda, estado de documento y postulación
+    const estudiantesFUASFiltrados = estudiantesFUASLista.filter(est => {
         // Filtro de búsqueda
         if (busquedaNP.trim()) {
             const termino = busquedaNP.toLowerCase().trim()
@@ -166,16 +180,25 @@ export default function SocialWorkerPortal() {
             if (!coincide) return false
         }
 
-        // Filtro de estado documento
-        switch (filtroDocumento) {
-            case 'sin_doc': return !est.documento_url && est.estado === 'no_postulo'
-            case 'pendiente': return est.estado === 'documento_pendiente'
-            case 'validado': return est.estado === 'documento_validado'
-            case 'rechazado': return est.estado === 'documento_rechazado'
-            default: return true
+        // Filtro de postulación (NUEVO)
+        if (filtroPostulacion === 'postularon' && est.estado !== 'postulo') return false
+        if (filtroPostulacion === 'no_postularon' && est.estado === 'postulo') return false
+
+        // Filtro de estado documento (solo aplica a no postulantes)
+        if (filtroPostulacion !== 'postularon') {
+            switch (filtroDocumento) {
+                case 'sin_doc': return !est.documento_url && est.estado === 'no_postulo'
+                case 'pendiente': return est.estado === 'documento_pendiente'
+                case 'validado': return est.estado === 'documento_validado'
+                case 'rechazado': return est.estado === 'documento_rechazado'
+                default: break
+            }
         }
+
+        return true
     }).filter(est => {
-        // Filtro por sede
+        // Filtro por sede - asistentes no-jefa ven solo su sede
+        if (!isJefaDAE && miSede) return est.sede === miSede
         if (filtroSede === 'todas') return true
         if (filtroSede === 'mi_sede') return est.sede === miSede
         return est.sede === filtroSede
@@ -261,9 +284,15 @@ export default function SocialWorkerPortal() {
             const pagina = resetPagina ? 1 : directorioPagina
             if (resetPagina) setDirectorioPagina(1)
 
+            // Si NO es jefa DAE, forzar filtro por su sede
+            let sedeQuery = directorioSede !== 'todas' ? directorioSede : undefined
+            if (!isJefaDAE && miSede) {
+                sedeQuery = miSede
+            }
+
             const data = await api.getDirectorioEstudiantes({
                 busqueda: directorioBusqueda.trim() || undefined,
-                sede: directorioSede !== 'todas' ? directorioSede : undefined,
+                sede: sedeQuery,
                 estado: directorioEstado !== 'todos' ? directorioEstado : undefined,
                 limite: DIRECTORIO_POR_PAGINA,
                 offset: (pagina - 1) * DIRECTORIO_POR_PAGINA
@@ -279,18 +308,29 @@ export default function SocialWorkerPortal() {
         }
     }
 
-    // Cargar sedes disponibles al iniciar
+    // Cargar sedes disponibles y sede del asistente al iniciar
     useEffect(() => {
-        const cargarSedes = async () => {
+        const cargarSedesYMiSede = async () => {
             try {
-                const sedes = await api.getSedes()
+                const [sedes, horarioData] = await Promise.all([
+                    api.getSedes(),
+                    user ? api.getHorarioAsistente(user.rut) : Promise.resolve({ horario_atencion: null, sede: null })
+                ])
                 setSedesDisponibles(sedes)
+                if (horarioData.sede) {
+                    setMiSede(horarioData.sede)
+                    // Si no es jefa, auto-seleccionar su sede
+                    if (!isJefaDAE) {
+                        setDirectorioSede(horarioData.sede)
+                    }
+                }
+                setMiHorario(horarioData.horario_atencion)
             } catch (error) {
                 console.error('Error cargando sedes:', error)
             }
         }
-        cargarSedes()
-    }, [])
+        cargarSedesYMiSede()
+    }, [user, isJefaDAE])
 
     // Cargar directorio al entrar al tab
     useEffect(() => {
@@ -302,9 +342,9 @@ export default function SocialWorkerPortal() {
     // Cargar al cambiar filtros o página
     useEffect(() => {
         if (tabActivo === 'estudiantes') {
-            cargarDirectorio()
+            cargarDirectorio(true)
         }
-    }, [directorioPagina])
+    }, [directorioPagina, directorioSede, directorioEstado])
 
     // Manejar click en estudiante para ver perfil
     const handleVerPerfil = (rut: string) => {
@@ -377,6 +417,42 @@ export default function SocialWorkerPortal() {
         } catch (error) {
             console.error('Error guardando sede:', error)
             toast.error('Error al guardar sede')
+        }
+    }
+
+    // ========== HORARIOS EQUIPO (solo jefa DAE) ==========
+    const cargarAsistentesEquipo = async () => {
+        setCargandoEquipo(true)
+        try {
+            const asistentes = await api.getAsistentesSociales()
+            // Filtrar para no incluirse a sí misma
+            const otras = asistentes.filter(a => a.rut !== user?.rut)
+            setAsistentesEquipo(otras)
+        } catch (error) {
+            console.error('Error cargando asistentes:', error)
+            toast.error('Error al cargar equipo')
+        } finally {
+            setCargandoEquipo(false)
+        }
+    }
+
+    const handleSeleccionarAsistenteEquipo = async (rut: string) => {
+        setAsistenteSeleccionadaEquipo(rut)
+        if (!rut) {
+            setHorarioEquipo(null)
+            setSedeEquipo('')
+            return
+        }
+        setCargandoEquipo(true)
+        try {
+            const data = await api.getHorarioAsistente(rut)
+            setHorarioEquipo(data.horario_atencion)
+            setSedeEquipo(data.sede || '')
+        } catch (error) {
+            console.error('Error cargando horario:', error)
+            toast.error('Error al cargar horario')
+        } finally {
+            setCargandoEquipo(false)
         }
     }
 
@@ -666,30 +742,45 @@ export default function SocialWorkerPortal() {
 
     if (cargando) {
         return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
+            <div className="min-h-screen bg-mesh flex items-center justify-center">
+                <div className="text-center animate-fade-in-up">
+                    <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-200">
+                        <svg className="w-7 h-7 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                    </div>
+                    <p className="text-slate-500 text-sm font-medium">Cargando portal...</p>
+                </div>
             </div>
         )
     }
 
     return (
-        <div className="min-h-screen bg-slate-50">
+        <div className="min-h-screen bg-mesh">
             {/* Header */}
-            <header className="bg-white border-b border-slate-200/80 sticky top-0 z-40 backdrop-blur-sm bg-white/95">
+            <header className="glass-strong border-b border-slate-200/60 sticky top-0 z-40">
                 <div className="max-w-7xl mx-auto px-6 py-4">
                     <div className="flex justify-between items-center">
-                        <div>
-                            <h1 className="text-lg font-semibold text-slate-900 tracking-tight">Gestor de Becas</h1>
-                            <p className="text-xs text-slate-400 tracking-wide uppercase">Asuntos Estudiantiles</p>
+                        <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center shadow-sm">
+                                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h1 className="text-base font-bold text-slate-900 tracking-tight">GestorBecas</h1>
+                                <p className="text-[10px] text-slate-400 font-semibold tracking-widest uppercase">Asuntos Estudiantiles</p>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-6">
-                            <div className="text-right">
-                                <p className="text-sm font-medium text-slate-700">{user?.nombre}</p>
-                                <p className="text-xs text-slate-400">Asistente Social</p>
+                        <div className="flex items-center gap-5">
+                            <div className="text-right hidden sm:block">
+                                <p className="text-sm font-semibold text-slate-700">{user?.nombre}</p>
+                                <p className="text-xs text-slate-400">{isJefaDAE ? 'Jefa Asuntos Estudiantiles' : 'Asistente Social'}{miSede ? ` · ${miSede}` : ''}</p>
                             </div>
                             <button 
                                 onClick={handleLogout}
-                                className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all"
+                                className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200"
                             >
                                 Cerrar sesión
                             </button>
@@ -701,33 +792,61 @@ export default function SocialWorkerPortal() {
             <main id="main-content" className="max-w-7xl mx-auto px-6 py-8">
                 {/* Estadísticas */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-                    <div className="bg-white rounded-2xl p-5 border border-slate-200/60 shadow-sm hover:shadow-md transition-shadow">
-                        <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Pendientes</p>
-                        <p className="text-3xl font-bold text-slate-900">{pendientesCount}</p>
+                    <div className="stat-card bg-white rounded-2xl p-5 border border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
+                                <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                        </div>
+                        <p className="text-3xl font-bold text-slate-900 tracking-tight">{pendientesCount}</p>
+                        <p className="text-xs font-medium text-slate-400 mt-1">Pendientes</p>
                     </div>
-                    <div className="bg-white rounded-2xl p-5 border border-slate-200/60 shadow-sm hover:shadow-md transition-shadow">
-                        <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Citas hoy</p>
-                        <p className="text-3xl font-bold text-slate-900">{citasPendientesHoy.length}</p>
+                    <div className="stat-card bg-white rounded-2xl p-5 border border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+                                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                            </div>
+                        </div>
+                        <p className="text-3xl font-bold text-slate-900 tracking-tight">{citasPendientesHoy.length}</p>
+                        <p className="text-xs font-medium text-slate-400 mt-1">Citas hoy</p>
                     </div>
-                    <div className="bg-white rounded-2xl p-5 border border-slate-200/60 shadow-sm hover:shadow-md transition-shadow">
-                        <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Completadas</p>
-                        <p className="text-3xl font-bold text-slate-900">
+                    <div className="stat-card bg-white rounded-2xl p-5 border border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
+                                <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                        </div>
+                        <p className="text-3xl font-bold text-slate-900 tracking-tight">
                             {todasCitas.filter(c => c.estado === 'completada').length}
                         </p>
+                        <p className="text-xs font-medium text-slate-400 mt-1">Completadas</p>
                     </div>
-                    <div className={`rounded-2xl p-5 border shadow-sm hover:shadow-md transition-shadow ${docsPendientes > 0 ? 'bg-amber-50/80 border-amber-200/60' : 'bg-white border-slate-200/60'}`}>
-                        <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Por validar</p>
-                        <p className={`text-3xl font-bold ${docsPendientes > 0 ? 'text-amber-600' : 'text-slate-900'}`}>
+                    <div className={`stat-card rounded-2xl p-5 border shadow-sm hover:shadow-md transition-all duration-200 ${docsPendientes > 0 ? 'bg-amber-50/80 border-amber-200/60' : 'bg-white border-slate-200/60'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${docsPendientes > 0 ? 'bg-amber-100' : 'bg-slate-100'}`}>
+                                <svg className={`w-5 h-5 ${docsPendientes > 0 ? 'text-amber-600' : 'text-slate-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                            </div>
+                        </div>
+                        <p className={`text-3xl font-bold tracking-tight ${docsPendientes > 0 ? 'text-amber-600' : 'text-slate-900'}`}>
                             {docsPendientes}
                         </p>
+                        <p className="text-xs font-medium text-slate-400 mt-1">Por validar</p>
                     </div>
                 </div>
 
-                {/* Tabs */}
-                <div className="flex flex-wrap gap-2 mb-8 p-1.5 bg-slate-100 rounded-xl w-fit">
+                {/* Tabs - Role-based */}
+                <div className="flex flex-wrap gap-1 mb-8 p-1 bg-slate-100/80 rounded-2xl w-fit border border-slate-200/50">
                     <button
                         onClick={() => setTabActivo('estudiantes')}
-                        className={`px-5 py-2.5 text-sm font-medium rounded-lg transition-all ${
+                        className={`px-5 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 ${
                             tabActivo === 'estudiantes'
                                 ? 'bg-white text-slate-900 shadow-sm'
                                 : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
@@ -737,7 +856,7 @@ export default function SocialWorkerPortal() {
                     </button>
                     <button
                         onClick={() => setTabActivo('citas')}
-                        className={`px-5 py-2.5 text-sm font-medium rounded-lg transition-all ${
+                        className={`px-5 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 ${
                             tabActivo === 'citas'
                                 ? 'bg-white text-slate-900 shadow-sm'
                                 : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
@@ -745,39 +864,44 @@ export default function SocialWorkerPortal() {
                     >
                         Citas
                     </button>
-                    <button
-                        onClick={() => { setTabActivo('sincronizar'); handleVerificarBackend() }}
-                        className={`px-5 py-2.5 text-sm font-medium rounded-lg transition-all ${
-                            tabActivo === 'sincronizar'
-                                ? 'bg-white text-slate-900 shadow-sm'
-                                : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
-                        }`}
-                    >
-                        Acreditación
-                    </button>
-                    <button
-                        onClick={() => { setTabActivo('fuas'); handleVerificarBackend() }}
-                        className={`px-5 py-2.5 text-sm font-medium rounded-lg transition-all ${
-                            tabActivo === 'fuas'
-                                ? 'bg-amber-500 text-white shadow-sm'
-                                : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
-                        }`}
-                    >
-                        FUAS
-                    </button>
-                    <button
-                        onClick={() => { setTabActivo('beneficios'); handleVerificarBackend() }}
-                        className={`px-5 py-2.5 text-sm font-medium rounded-lg transition-all ${
-                            tabActivo === 'beneficios'
-                                ? 'bg-violet-500 text-white shadow-sm'
-                                : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
-                        }`}
-                    >
-                        Beneficios
-                    </button>
+                    {/* Solo jefa DAE ve tabs administrativos */}
+                    {isJefaDAE && (
+                        <>
+                            <button
+                                onClick={() => { setTabActivo('sincronizar'); handleVerificarBackend() }}
+                                className={`px-5 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 ${
+                                    tabActivo === 'sincronizar'
+                                        ? 'bg-white text-slate-900 shadow-sm'
+                                        : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                                }`}
+                            >
+                                Acreditación
+                            </button>
+                            <button
+                                onClick={() => { setTabActivo('fuas'); handleVerificarBackend() }}
+                                className={`px-5 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 ${
+                                    tabActivo === 'fuas'
+                                        ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-sm shadow-amber-200'
+                                        : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                                }`}
+                            >
+                                FUAS
+                            </button>
+                            <button
+                                onClick={() => { setTabActivo('beneficios'); handleVerificarBackend() }}
+                                className={`px-5 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 ${
+                                    tabActivo === 'beneficios'
+                                        ? 'bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-sm shadow-violet-200'
+                                        : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                                }`}
+                            >
+                                Beneficios
+                            </button>
+                        </>
+                    )}
                     <button
                         onClick={() => { setTabActivo('horario'); cargarHorarioYSedes() }}
-                        className={`px-5 py-2.5 text-sm font-medium rounded-lg transition-all ${
+                        className={`px-5 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 ${
                             tabActivo === 'horario'
                                 ? 'bg-white text-slate-900 shadow-sm'
                                 : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
@@ -785,6 +909,19 @@ export default function SocialWorkerPortal() {
                     >
                         Mi Horario
                     </button>
+                    {/* Solo jefa DAE ve horarios del equipo */}
+                    {isJefaDAE && (
+                        <button
+                            onClick={() => { setTabActivo('horarios-equipo'); cargarAsistentesEquipo() }}
+                            className={`px-5 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 ${
+                                tabActivo === 'horarios-equipo'
+                                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm shadow-emerald-200'
+                                    : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                            }`}
+                        >
+                            Horarios Equipo
+                        </button>
+                    )}
                 </div>
 
                 {/* Tab Estudiantes - Directorio Completo */}
@@ -798,17 +935,62 @@ export default function SocialWorkerPortal() {
                                     {directorioTotal} registros
                                 </p>
                             </div>
-                            <button
-                                onClick={() => cargarDirectorio(true)}
-                                disabled={directorioCargando}
-                                className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 disabled:opacity-50 transition-all"
-                            >
-                                Actualizar
-                            </button>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={async () => {
+                                        if (directorioTotal === 0) {
+                                            toast.error('No hay datos para exportar')
+                                            return
+                                        }
+                                        setExportando(true)
+                                        toast.info('Obteniendo todos los registros...')
+                                        try {
+                                            // Obtener TODOS los datos con los filtros actuales (sin paginación)
+                                            const data = await api.getDirectorioEstudiantes({
+                                                busqueda: directorioBusqueda.trim() || undefined,
+                                                sede: directorioSede !== 'todas' ? directorioSede : undefined,
+                                                estado: directorioEstado !== 'todos' ? directorioEstado : undefined,
+                                                limite: 10000, // Límite alto para obtener todos
+                                                offset: 0
+                                            })
+                                            exportarDirectorioEstudiantes(data.estudiantes)
+                                            toast.exito(`${data.estudiantes.length} registros exportados`)
+                                        } catch (error) {
+                                            console.error('Error exportando:', error)
+                                            toast.error('Error al exportar')
+                                        } finally {
+                                            setExportando(false)
+                                        }
+                                    }}
+                                    disabled={exportando}
+                                    className="px-4 py-2.5 text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 disabled:opacity-50 transition-all duration-200 flex items-center gap-2"
+                                >
+                                    {exportando ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin"></div>
+                                            Exportando...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                            Exportar Excel ({directorioTotal})
+                                        </>
+                                    )}
+                                </button>
+                                <button
+                                    onClick={() => cargarDirectorio(true)}
+                                    disabled={directorioCargando}
+                                    className="px-4 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 disabled:opacity-50 transition-all duration-200"
+                                >
+                                    Actualizar
+                                </button>
+                            </div>
                         </div>
 
                         {/* Filtros */}
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6 bg-slate-50/50 border-b border-slate-100">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6 bg-gradient-to-r from-slate-50/80 to-indigo-50/30 border-b border-slate-100">
                             {/* Búsqueda */}
                             <div className="md:col-span-2">
                                 <label className="block text-xs font-medium text-slate-500 mb-1.5">Buscar</label>
@@ -823,30 +1005,35 @@ export default function SocialWorkerPortal() {
                                     />
                                     <button 
                                         onClick={() => cargarDirectorio(true)}
-                                        className="px-4 py-2.5 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors"
+                                        className="px-4 py-2.5 text-sm font-semibold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-colors"
                                     >
                                         Buscar
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Filtro Sede */}
+                            {/* Filtro Sede - solo editable para jefa DAE */}
                             <div>
                                 <label className="block text-xs font-medium text-slate-500 mb-1.5">Sede</label>
-                                <select
-                                    value={directorioSede}
-                                    onChange={(e) => {
-                                        setDirectorioSede(e.target.value)
-                                        setDirectorioPagina(1)
-                                        setTimeout(() => cargarDirectorio(true), 0)
-                                    }}
-                                    className="w-full px-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent outline-none bg-white transition-all"
-                                >
-                                    <option value="todas">Todas las sedes</option>
-                                    {sedesDisponibles.map(s => (
-                                        <option key={s} value={s}>{s}</option>
-                                    ))}
-                                </select>
+                                {isJefaDAE ? (
+                                    <select
+                                        value={directorioSede}
+                                        onChange={(e) => {
+                                            setDirectorioSede(e.target.value)
+                                            setDirectorioPagina(1)
+                                        }}
+                                        className="w-full px-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none bg-white transition-all duration-200"
+                                    >
+                                        <option value="todas">Todas las sedes</option>
+                                        {sedesDisponibles.map(s => (
+                                            <option key={s} value={s}>{s}</option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <div className="w-full px-4 py-2.5 text-sm border border-slate-200 rounded-lg bg-slate-50 text-slate-600">
+                                        {miSede || 'Sin sede asignada'}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Filtro Estado */}
@@ -857,9 +1044,8 @@ export default function SocialWorkerPortal() {
                                     onChange={(e) => {
                                         setDirectorioEstado(e.target.value)
                                         setDirectorioPagina(1)
-                                        setTimeout(() => cargarDirectorio(true), 0)
                                     }}
-                                    className="w-full px-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent outline-none bg-white transition-all"
+                                    className="w-full px-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none bg-white transition-all duration-200"
                                 >
                                     <option value="todos">Todos los estados</option>
                                     <option value="pendiente">Pendiente</option>
@@ -875,8 +1061,10 @@ export default function SocialWorkerPortal() {
                         <div className="overflow-x-auto">
                             {directorioCargando ? (
                                 <div className="flex flex-col justify-center items-center py-16">
-                                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-200 border-t-slate-900"></div>
-                                    <span className="mt-4 text-sm text-slate-400">Cargando...</span>
+                                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
+                                        <div className="animate-spin rounded-full h-5 w-5 border-2 border-indigo-200 border-t-indigo-600"></div>
+                                    </div>
+                                    <span className="mt-3 text-sm text-slate-400 font-medium">Cargando...</span>
                                 </div>
                             ) : directorio.length === 0 ? (
                                 <div className="text-center py-16">
@@ -1033,65 +1221,86 @@ export default function SocialWorkerPortal() {
 
                 {/* Tab Citas */}
                 {tabActivo === 'citas' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Citas de hoy */}
-                        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
-                            <div className="p-6 border-b border-slate-100">
-                                <h3 className="text-base font-semibold text-slate-900">Citas de Hoy</h3>
-                                <p className="text-sm text-slate-400 mt-0.5">{citasPendientesHoy.length} pendiente(s)</p>
+                    <div className="space-y-6">
+                        {/* Botón exportar citas */}
+                        <div className="flex justify-end">
+                            <button
+                                onClick={() => {
+                                    if (todasCitas.length === 0) {
+                                        toast.error('No hay citas para exportar')
+                                        return
+                                    }
+                                    exportarCitas(todasCitas, user?.nombre)
+                                    toast.exito('Archivo descargado')
+                                }}
+                                className="px-4 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-all flex items-center gap-2"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Exportar Citas
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Citas de hoy */}
+                            <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+                                <div className="p-6 border-b border-slate-100">
+                                    <h3 className="text-base font-semibold text-slate-900">Citas de Hoy</h3>
+                                    <p className="text-sm text-slate-400 mt-0.5">{citasPendientesHoy.length} pendiente(s)</p>
+                                </div>
+                                <div className="p-6">
+                                    {citasPendientesHoy.length > 0 ? (
+                                        <div className="space-y-3">
+                                            {citasPendientesHoy.map(cita => (
+                                                <div
+                                                    key={cita.id}
+                                                    onClick={() => { setCitaSeleccionada(cita); setMostrarModalCita(true) }}
+                                                    className="p-4 bg-slate-50 rounded-xl hover:bg-slate-100 cursor-pointer transition-colors"
+                                                >
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <p className="font-medium text-slate-900">{cita.estudiantes?.nombre}</p>
+                                                            <p className="text-sm text-slate-500 mt-0.5">{formatDateTime(cita.inicio)}</p>
+                                                        </div>
+                                                        <Badge variant={getCitaStatusVariant(cita.estado)}>
+                                                            {getCitaStatusLabel(cita.estado)}
+                                                        </Badge>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-center py-8 text-slate-400">Sin citas para hoy</p>
+                                    )}
+                                </div>
                             </div>
-                            <div className="p-6">
-                                {citasPendientesHoy.length > 0 ? (
-                                    <div className="space-y-3">
-                                        {citasPendientesHoy.map(cita => (
+
+                            {/* Todas las citas */}
+                            <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+                                <div className="p-6 border-b border-slate-100">
+                                    <h3 className="text-base font-semibold text-slate-900">Historial</h3>
+                                </div>
+                                <div className="p-6">
+                                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                                        {todasCitas.slice(0, 10).map(cita => (
                                             <div
                                                 key={cita.id}
                                                 onClick={() => { setCitaSeleccionada(cita); setMostrarModalCita(true) }}
-                                                className="p-4 bg-slate-50 rounded-xl hover:bg-slate-100 cursor-pointer transition-colors"
+                                                className="flex justify-between items-center py-3 border-b border-slate-100 last:border-0 cursor-pointer hover:bg-slate-50 px-2 rounded-lg"
                                             >
-                                                <div className="flex justify-between items-start">
-                                                    <div>
-                                                        <p className="font-medium text-slate-900">{cita.estudiantes?.nombre}</p>
-                                                        <p className="text-sm text-slate-500 mt-0.5">{formatDateTime(cita.inicio)}</p>
-                                                    </div>
-                                                    <Badge variant={getCitaStatusVariant(cita.estado)}>
-                                                        {getCitaStatusLabel(cita.estado)}
-                                                    </Badge>
+                                                <div>
+                                                    <p className="text-sm font-medium text-slate-900">{cita.estudiantes?.nombre}</p>
+                                                    <p className="text-xs text-slate-400">{formatDateShort(cita.inicio)}</p>
                                                 </div>
+                                                <Badge variant={getCitaStatusVariant(cita.estado)}>
+                                                    {getCitaStatusLabel(cita.estado)}
+                                                </Badge>
                                             </div>
                                         ))}
+                                        {todasCitas.length === 0 && (
+                                            <p className="text-center py-8 text-slate-400">Sin historial</p>
+                                        )}
                                     </div>
-                                ) : (
-                                    <p className="text-center py-8 text-slate-400">Sin citas para hoy</p>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Todas las citas */}
-                        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
-                            <div className="p-6 border-b border-slate-100">
-                                <h3 className="text-base font-semibold text-slate-900">Historial</h3>
-                            </div>
-                            <div className="p-6">
-                                <div className="space-y-2 max-h-96 overflow-y-auto">
-                                    {todasCitas.slice(0, 10).map(cita => (
-                                        <div
-                                            key={cita.id}
-                                            onClick={() => { setCitaSeleccionada(cita); setMostrarModalCita(true) }}
-                                            className="flex justify-between items-center py-3 border-b border-slate-100 last:border-0 cursor-pointer hover:bg-slate-50 px-2 rounded-lg"
-                                        >
-                                            <div>
-                                                <p className="text-sm font-medium text-slate-900">{cita.estudiantes?.nombre}</p>
-                                                <p className="text-xs text-slate-400">{formatDateShort(cita.inicio)}</p>
-                                            </div>
-                                            <Badge variant={getCitaStatusVariant(cita.estado)}>
-                                                {getCitaStatusLabel(cita.estado)}
-                                            </Badge>
-                                        </div>
-                                    ))}
-                                    {todasCitas.length === 0 && (
-                                        <p className="text-center py-8 text-slate-400">Sin historial</p>
-                                    )}
                                 </div>
                             </div>
                         </div>
@@ -1218,16 +1427,35 @@ export default function SocialWorkerPortal() {
                                                 Estudiantes que deben Postular
                                             </h3>
                                             <p className="text-sm text-slate-400 mt-0.5">
-                                                {estudiantesFUAS.length} estudiante(s) encontrado(s)
+                                                {estudiantesFUASAcreditFiltrados.length} estudiante(s) {busquedaFUAS ? 'filtrado(s)' : 'encontrado(s)'}
                                             </p>
                                         </div>
-                                        <button
-                                            onClick={handleEnviarNotificacionesFUAS}
-                                            disabled={seleccionadosFUAS.size === 0 || enviandoNotificacion}
-                                            className="px-4 py-2.5 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                        >
-                                            {enviandoNotificacion ? 'Enviando...' : `Enviar Notificación (${seleccionadosFUAS.size})`}
-                                        </button>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => {
+                                                    // Exportar todos los filtrados (no solo la página actual)
+                                                    if (estudiantesFUASAcreditFiltrados.length === 0) {
+                                                        toast.error('No hay datos para exportar')
+                                                        return
+                                                    }
+                                                    exportarEstudiantesFUAS(estudiantesFUASAcreditFiltrados, 'acreditacion')
+                                                    toast.exito(`${estudiantesFUASAcreditFiltrados.length} registros exportados`)
+                                                }}
+                                                className="px-4 py-2.5 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-all flex items-center gap-2"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                </svg>
+                                                Exportar ({estudiantesFUASAcreditFiltrados.length})
+                                            </button>
+                                            <button
+                                                onClick={handleEnviarNotificacionesFUAS}
+                                                disabled={seleccionadosFUAS.size === 0 || enviandoNotificacion}
+                                                className="px-4 py-2.5 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                            >
+                                                {enviandoNotificacion ? 'Enviando...' : `Enviar Notificación (${seleccionadosFUAS.size})`}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1263,7 +1491,7 @@ export default function SocialWorkerPortal() {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-50">
-                                            {estudiantesFUASFiltrados
+                                            {estudiantesFUASAcreditFiltrados
                                                 .slice((paginaActual - 1) * ESTUDIANTES_POR_PAGINA, paginaActual * ESTUDIANTES_POR_PAGINA)
                                                 .map(est => (
                                                     <tr key={est.rut} className={`hover:bg-slate-50/80 transition-colors ${!est.correo ? 'opacity-60' : ''}`}>
@@ -1301,10 +1529,10 @@ export default function SocialWorkerPortal() {
                                 </div>
 
                                 {/* Paginación */}
-                                {estudiantesFUASFiltrados.length > ESTUDIANTES_POR_PAGINA && (
+                                {estudiantesFUASAcreditFiltrados.length > ESTUDIANTES_POR_PAGINA && (
                                     <div className="flex items-center justify-between p-6 border-t border-slate-100">
                                         <span className="text-sm text-slate-400">
-                                            Mostrando {((paginaActual - 1) * ESTUDIANTES_POR_PAGINA) + 1} - {Math.min(paginaActual * ESTUDIANTES_POR_PAGINA, estudiantesFUASFiltrados.length)} de {estudiantesFUASFiltrados.length}
+                                            Mostrando {((paginaActual - 1) * ESTUDIANTES_POR_PAGINA) + 1} - {Math.min(paginaActual * ESTUDIANTES_POR_PAGINA, estudiantesFUASAcreditFiltrados.length)} de {estudiantesFUASAcreditFiltrados.length}
                                             {busquedaFUAS && ` (filtrado de ${estudiantesFUAS.length} total)`}
                                         </span>
                                         <div className="flex gap-2 items-center">
@@ -1316,10 +1544,10 @@ export default function SocialWorkerPortal() {
                                                 Anterior
                                             </button>
                                             <span className="px-3 py-1 text-sm text-slate-600">
-                                                {paginaActual} de {Math.ceil(estudiantesFUASFiltrados.length / ESTUDIANTES_POR_PAGINA)}
+                                                {paginaActual} de {Math.ceil(estudiantesFUASAcreditFiltrados.length / ESTUDIANTES_POR_PAGINA)}
                                             </span>
                                             <button
-                                                disabled={paginaActual >= Math.ceil(estudiantesFUASFiltrados.length / ESTUDIANTES_POR_PAGINA)}
+                                                disabled={paginaActual >= Math.ceil(estudiantesFUASAcreditFiltrados.length / ESTUDIANTES_POR_PAGINA)}
                                                 onClick={() => setPaginaActual(p => p + 1)}
                                                 className="px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                             >
@@ -1338,9 +1566,9 @@ export default function SocialWorkerPortal() {
                     <div className="space-y-6">
                         {/* Subir CSV de Postulantes */}
                         <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6">
-                            <h3 className="text-base font-semibold text-slate-900 mb-1">Detectar Estudiantes que NO Postularon</h3>
+                            <h3 className="text-base font-semibold text-slate-900 mb-1">Cruzar Postulación FUAS</h3>
                             <p className="text-sm text-slate-400 mb-6">
-                                Sube el CSV de postulantes FUAS nacionales. El sistema identificará qué estudiantes matriculados no aparecen en ese listado.
+                                Sube el CSV de postulantes FUAS nacionales. El sistema cruzará con estudiantes matriculados para identificar quiénes postularon y quiénes no.
                             </p>
 
                             <FileUpload
@@ -1398,7 +1626,7 @@ export default function SocialWorkerPortal() {
                                             }
 
                                             setDetectandoNoPostulantes(true)
-                                            toast.info('Detectando estudiantes que no postularon...')
+                                            toast.info('Cruzando datos de postulación...')
 
                                             try {
                                                 const rutsPostulantes = resultadoCSVFUAS.datos.map(d => d.rut)
@@ -1407,9 +1635,15 @@ export default function SocialWorkerPortal() {
                                                 setResultadoDeteccion(resultado)
 
                                                 if (resultado.exitoso) {
-                                                    setNoPostulantes(resultado.estudiantes)
+                                                    // Combinar ambas listas (postulantes y no postulantes)
+                                                    const listaCompleta = [
+                                                        ...(resultado.estudiantes || []),
+                                                        ...(resultado.estudiantesPostularon || [])
+                                                    ]
+                                                    setEstudiantesFUASLista(listaCompleta)
                                                     setPaginaNP(1)
-                                                    toast.exito(`${resultado.noPostularon} estudiantes NO postularon a FUAS`)
+                                                    setFiltroPostulacion('todos')
+                                                    toast.exito(`Cruce completado: ${resultado.siPostularon || 0} postularon, ${resultado.noPostularon} no postularon`)
                                                 } else {
                                                     toast.error(resultado.mensaje || 'Error al detectar')
                                                 }
@@ -1423,7 +1657,7 @@ export default function SocialWorkerPortal() {
                                         disabled={detectandoNoPostulantes || !backendDisponible}
                                         className="px-4 py-2.5 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                     >
-                                        {detectandoNoPostulantes ? 'Detectando...' : 'Detectar No Postulantes'}
+                                        {detectandoNoPostulantes ? 'Cruzando...' : 'Cruzar Postulación'}
                                     </button>
                                 </div>
                             )}
@@ -1434,10 +1668,11 @@ export default function SocialWorkerPortal() {
                                         {resultadoDeteccion.mensaje}
                                     </p>
                                     {resultadoDeteccion.exitoso && (
-                                        <div className="mt-2 text-sm text-slate-600 space-y-1">
-                                            <p>Matriculados: {resultadoDeteccion.totalMatriculados}</p>
-                                            <p>Postulantes: {resultadoDeteccion.totalPostulantes}</p>
-                                            <p>No postularon: {resultadoDeteccion.noPostularon}</p>
+                                        <div className="mt-2 text-sm text-slate-600 grid grid-cols-2 gap-2">
+                                            <p>Matriculados: <span className="font-medium">{resultadoDeteccion.totalMatriculados}</span></p>
+                                            <p>Del CSV: <span className="font-medium">{resultadoDeteccion.totalPostulantes}</span></p>
+                                            <p className="text-emerald-700">✓ Postularon: <span className="font-medium">{resultadoDeteccion.siPostularon || 0}</span></p>
+                                            <p className="text-amber-700">⚠ No postularon: <span className="font-medium">{resultadoDeteccion.noPostularon}</span></p>
                                         </div>
                                     )}
                                 </div>
@@ -1446,12 +1681,13 @@ export default function SocialWorkerPortal() {
                             <div className="mt-4">
                                 <button
                                     onClick={async () => {
-                                        toast.info('Cargando estudiantes que no postularon...')
+                                        toast.info('Cargando estudiantes FUAS...')
                                         const resultado = await getNoPostulantes()
                                         if (resultado.exitoso && resultado.estudiantes.length > 0) {
-                                            setNoPostulantes(resultado.estudiantes)
+                                            setEstudiantesFUASLista(resultado.estudiantes)
                                             setPaginaNP(1)
-                                            toast.exito(`${resultado.total} estudiantes que no postularon`)
+                                            setFiltroPostulacion('todos')
+                                            toast.exito(`${resultado.total} estudiantes cargados (${resultado.totalPostularon || 0} postularon, ${resultado.totalNoPostularon || 0} no postularon)`)
                                         } else if (resultado.estudiantes.length === 0) {
                                             toast.advertencia('No hay registros guardados. Sube un CSV primero.')
                                         } else {
@@ -1460,13 +1696,13 @@ export default function SocialWorkerPortal() {
                                     }}
                                     className="px-4 py-2.5 text-sm font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-all"
                                 >
-                                    Ver No Postulantes Guardados
+                                    Ver Resultados Guardados
                                 </button>
                             </div>
                         </div>
 
-                        {/* Lista de No Postulantes */}
-                        {noPostulantes.length > 0 && (
+                        {/* Lista de Estudiantes FUAS */}
+                        {estudiantesFUASLista.length > 0 && (
                             <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
                                 <div className="p-6 border-b border-slate-100">
                                     <div className="flex flex-col gap-4">
@@ -1484,54 +1720,89 @@ export default function SocialWorkerPortal() {
                                             />
                                         </div>
 
-                                        {/* Filtros de Estado Documento */}
-                                        <div className="flex flex-wrap gap-2">
+                                        {/* NUEVO: Filtro de Postulación */}
+                                        <div className="flex flex-wrap gap-2 pb-3 border-b border-slate-100">
+                                            <span className="text-xs font-medium text-slate-500 uppercase tracking-wider self-center mr-2">Estado FUAS:</span>
                                             <button
-                                                onClick={() => { setFiltroDocumento('todos'); setPaginaNP(1) }}
-                                                className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${filtroDocumento === 'todos'
+                                                onClick={() => { setFiltroPostulacion('todos'); setFiltroDocumento('todos'); setPaginaNP(1) }}
+                                                className={`px-4 py-2 text-sm rounded-lg border transition-colors ${filtroPostulacion === 'todos'
                                                     ? 'bg-slate-900 text-white border-slate-900'
                                                     : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                                                    }`}
+                                                }`}
                                             >
-                                                Todos ({noPostulantes.length})
+                                                Todos ({estudiantesFUASLista.length})
                                             </button>
                                             <button
-                                                onClick={() => { setFiltroDocumento('sin_doc'); setPaginaNP(1) }}
-                                                className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${filtroDocumento === 'sin_doc'
-                                                ? 'bg-slate-600 text-white border-slate-600'
-                                                : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                                                onClick={() => { setFiltroPostulacion('postularon'); setFiltroDocumento('todos'); setPaginaNP(1) }}
+                                                className={`px-4 py-2 text-sm rounded-lg border transition-colors ${filtroPostulacion === 'postularon'
+                                                    ? 'bg-emerald-600 text-white border-emerald-600'
+                                                    : 'bg-white text-emerald-600 border-emerald-200 hover:border-emerald-300'
                                                 }`}
-                                        >
-                                            Sin documento ({noPostulantes.filter(e => !e.documento_url).length})
-                                        </button>
-                                        <button
-                                            onClick={() => { setFiltroDocumento('pendiente'); setPaginaNP(1) }}
-                                            className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${filtroDocumento === 'pendiente'
-                                                ? 'bg-amber-500 text-white border-amber-500'
-                                                : 'bg-white text-amber-600 border-amber-200 hover:border-amber-300'
+                                            >
+                                                ✓ Postularon ({totalPostularon})
+                                            </button>
+                                            <button
+                                                onClick={() => { setFiltroPostulacion('no_postularon'); setPaginaNP(1) }}
+                                                className={`px-4 py-2 text-sm rounded-lg border transition-colors ${filtroPostulacion === 'no_postularon'
+                                                    ? 'bg-amber-500 text-white border-amber-500'
+                                                    : 'bg-white text-amber-600 border-amber-200 hover:border-amber-300'
                                                 }`}
-                                        >
-                                            Por validar ({noPostulantes.filter(e => e.estado === 'documento_pendiente').length})
-                                        </button>
-                                        <button
-                                            onClick={() => { setFiltroDocumento('validado'); setPaginaNP(1) }}
-                                            className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${filtroDocumento === 'validado'
-                                                ? 'bg-emerald-500 text-white border-emerald-500'
-                                                : 'bg-white text-emerald-600 border-emerald-200 hover:border-emerald-300'
-                                                }`}
-                                        >
-                                            Validados ({noPostulantes.filter(e => e.estado === 'documento_validado').length})
-                                        </button>
-                                        <button
-                                            onClick={() => { setFiltroDocumento('rechazado'); setPaginaNP(1) }}
-                                            className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${filtroDocumento === 'rechazado'
-                                                ? 'bg-red-500 text-white border-red-500'
-                                                : 'bg-white text-red-600 border-red-200 hover:border-red-300'
-                                                }`}
-                                        >
-                                            Rechazados ({noPostulantes.filter(e => e.estado === 'documento_rechazado').length})
-                                        </button>
-                                    </div>
+                                            >
+                                                ⚠ No Postularon ({totalNoPostularon})
+                                            </button>
+                                        </div>
+
+                                        {/* Filtros de Estado Documento - Solo para no postulantes */}
+                                        {filtroPostulacion !== 'postularon' && (
+                                            <div className="flex flex-wrap gap-2">
+                                                <span className="text-xs font-medium text-slate-400 uppercase tracking-wider self-center mr-2">Documento:</span>
+                                                <button
+                                                    onClick={() => { setFiltroDocumento('todos'); setPaginaNP(1) }}
+                                                    className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${filtroDocumento === 'todos'
+                                                        ? 'bg-slate-700 text-white border-slate-700'
+                                                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                                                    }`}
+                                                >
+                                                    Todos
+                                                </button>
+                                                <button
+                                                    onClick={() => { setFiltroDocumento('sin_doc'); setPaginaNP(1) }}
+                                                    className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${filtroDocumento === 'sin_doc'
+                                                        ? 'bg-slate-600 text-white border-slate-600'
+                                                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                                                    }`}
+                                                >
+                                                    Sin documento ({estudiantesFUASLista.filter(e => e.estado === 'no_postulo' && !e.documento_url).length})
+                                                </button>
+                                                <button
+                                                    onClick={() => { setFiltroDocumento('pendiente'); setPaginaNP(1) }}
+                                                    className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${filtroDocumento === 'pendiente'
+                                                        ? 'bg-amber-500 text-white border-amber-500'
+                                                        : 'bg-white text-amber-600 border-amber-200 hover:border-amber-300'
+                                                    }`}
+                                                >
+                                                    Por validar ({estudiantesFUASLista.filter(e => e.estado === 'documento_pendiente').length})
+                                                </button>
+                                                <button
+                                                    onClick={() => { setFiltroDocumento('validado'); setPaginaNP(1) }}
+                                                    className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${filtroDocumento === 'validado'
+                                                        ? 'bg-emerald-500 text-white border-emerald-500'
+                                                        : 'bg-white text-emerald-600 border-emerald-200 hover:border-emerald-300'
+                                                    }`}
+                                                >
+                                                    Validados ({estudiantesFUASLista.filter(e => e.estado === 'documento_validado').length})
+                                                </button>
+                                                <button
+                                                    onClick={() => { setFiltroDocumento('rechazado'); setPaginaNP(1) }}
+                                                    className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${filtroDocumento === 'rechazado'
+                                                        ? 'bg-red-500 text-white border-red-500'
+                                                        : 'bg-white text-red-600 border-red-200 hover:border-red-300'
+                                                    }`}
+                                                >
+                                                    Rechazados ({estudiantesFUASLista.filter(e => e.estado === 'documento_rechazado').length})
+                                                </button>
+                                            </div>
+                                        )}
 
                                     {/* Filtro por Sede */}
                                     <div className="flex items-center gap-2">
@@ -1543,7 +1814,7 @@ export default function SocialWorkerPortal() {
                                         >
                                             <option value="todas">Todas las sedes</option>
                                             {miSede && <option value="mi_sede">Mi sede ({miSede})</option>}
-                                            {[...new Set(noPostulantes.map(e => e.sede).filter((s): s is string => s !== null && s !== undefined))].sort().map(sede => (
+                                            {[...new Set(estudiantesFUASLista.map(e => e.sede).filter((s): s is string => s !== null && s !== undefined))].sort().map(sede => (
                                                 <option key={sede} value={sede}>{sede}</option>
                                             ))}
                                         </select>
@@ -1553,15 +1824,39 @@ export default function SocialWorkerPortal() {
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <h3 className="text-base font-semibold text-slate-900">
-                                            Estudiantes que NO Postularon
+                                            {filtroPostulacion === 'postularon' 
+                                                ? 'Estudiantes que Postularon' 
+                                                : filtroPostulacion === 'no_postularon' 
+                                                    ? 'Estudiantes que NO Postularon' 
+                                                    : 'Todos los Estudiantes FUAS'}
                                         </h3>
                                         <p className="text-sm text-slate-400 mt-0.5">
-                                            {noPostulantesFiltrados.length} estudiante(s)
+                                            {estudiantesFUASFiltrados.length} estudiante(s) {(busquedaNP || filtroDocumento !== 'todos' || filtroSede !== 'todas' || filtroPostulacion !== 'todos') ? 'filtrado(s)' : ''}
                                         </p>
                                     </div>
-                                    <button
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => {
+                                                if (estudiantesFUASFiltrados.length === 0) {
+                                                    toast.error('No hay datos para exportar')
+                                                    return
+                                                }
+                                                const filename = filtroPostulacion === 'postularon' ? 'postulantes_fuas' : filtroPostulacion === 'no_postularon' ? 'no_postulantes' : 'estudiantes_fuas'
+                                                exportarEstudiantesFUAS(estudiantesFUASFiltrados, filename)
+                                                toast.exito(`${estudiantesFUASFiltrados.length} registros exportados`)
+                                            }}
+                                            className="px-4 py-2.5 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-all flex items-center gap-2"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                            Exportar ({estudiantesFUASFiltrados.length})
+                                        </button>
+                                        {/* Solo mostrar botón de notificar para no postulantes */}
+                                        {filtroPostulacion !== 'postularon' && (
+                                        <button
                                         onClick={async () => {
-                                            const estudiantesAEnviar = noPostulantes.filter(e =>
+                                            const estudiantesAEnviar = estudiantesFUASLista.filter(e =>
                                                 seleccionadosNP.has(e.rut) && e.correo && !e.notificacion_enviada
                                             )
                                             if (estudiantesAEnviar.length === 0) {
@@ -1585,7 +1880,7 @@ export default function SocialWorkerPortal() {
                                                     const rutsExitosos = estudiantesAEnviar.slice(0, resultado.exitosos).map(e => e.rut)
                                                     await marcarNotificadosFUAS(rutsExitosos)
 
-                                                    setNoPostulantes(prev => prev.map(e =>
+                                                    setEstudiantesFUASLista(prev => prev.map(e =>
                                                         rutsExitosos.includes(e.rut)
                                                             ? { ...e, notificacion_enviada: true }
                                                             : e
@@ -1609,17 +1904,20 @@ export default function SocialWorkerPortal() {
                                     >
                                         {enviandoRecordatorio ? 'Enviando...' : `Enviar Recordatorio (${seleccionadosNP.size})`}
                                     </button>
+                                        )}
+                                    </div>
                                 </div>
                                 </div>
 
-                                {/* Seleccionar todos */}
+                                {/* Seleccionar todos - Solo para no postulantes */}
+                                {filtroPostulacion !== 'postularon' && (
                                 <div className="flex items-center justify-between p-4 bg-amber-50/50">
                                     <div className="flex items-center gap-3">
                                         <input
                                             type="checkbox"
-                                            checked={seleccionadosNP.size > 0 && seleccionadosNP.size === noPostulantes.filter(e => e.correo && !e.notificacion_enviada).length}
+                                            checked={seleccionadosNP.size > 0 && seleccionadosNP.size === estudiantesFUASLista.filter(e => e.estado !== 'postulo' && e.correo && !e.notificacion_enviada).length}
                                             onChange={() => {
-                                                const notificables = noPostulantes.filter(e => e.correo && !e.notificacion_enviada)
+                                                const notificables = estudiantesFUASLista.filter(e => e.estado !== 'postulo' && e.correo && !e.notificacion_enviada)
                                                 if (seleccionadosNP.size === notificables.length) {
                                                     setSeleccionadosNP(new Set())
                                                 } else {
@@ -1629,36 +1927,40 @@ export default function SocialWorkerPortal() {
                                             className="w-4 h-4 text-slate-900 rounded border-slate-300"
                                         />
                                         <span className="text-sm text-slate-600">
-                                            Seleccionar todos pendientes ({noPostulantes.filter(e => e.correo && !e.notificacion_enviada).length})
+                                            Seleccionar todos pendientes ({estudiantesFUASLista.filter(e => e.estado !== 'postulo' && e.correo && !e.notificacion_enviada).length})
                                         </span>
                                     </div>
                                     <span className="text-xs text-slate-400">
-                                        {noPostulantes.filter(e => !e.correo).length} sin correo |
-                                        {noPostulantes.filter(e => e.notificacion_enviada).length} ya notificados
+                                        {estudiantesFUASLista.filter(e => e.estado !== 'postulo' && !e.correo).length} sin correo |{' '}
+                                        {estudiantesFUASLista.filter(e => e.estado !== 'postulo' && e.notificacion_enviada).length} ya notificados
                                     </span>
                                 </div>
+                                )}
 
                                 {/* Tabla */}
                                 <div className="overflow-x-auto">
                                     <table className="w-full">
                                         <thead>
                                             <tr className="border-b border-slate-100">
-                                                <th className="w-10 py-4 px-3"></th>
+                                                {filtroPostulacion !== 'postularon' && <th className="w-10 py-4 px-3"></th>}
                                                 <th className="text-left py-4 px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">RUT</th>
                                                 <th className="text-left py-4 px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">Nombre</th>
                                                 <th className="text-left py-4 px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">Correo</th>
                                                 <th className="text-left py-4 px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">Carrera</th>
-                                                <th className="text-left py-4 px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">Estado</th>
-                                                <th className="text-left py-4 px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">Documento</th>
+                                                <th className="text-left py-4 px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">Estado FUAS</th>
+                                                {filtroPostulacion !== 'postularon' && (
+                                                    <th className="text-left py-4 px-4 text-xs font-medium text-slate-400 uppercase tracking-wider">Documento</th>
+                                                )}
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-50">
-                                            {noPostulantesFiltrados
+                                            {estudiantesFUASFiltrados
                                                 .slice((paginaNP - 1) * ESTUDIANTES_POR_PAGINA, paginaNP * ESTUDIANTES_POR_PAGINA)
                                                 .map(est => (
                                                     <tr key={est.rut} className={`hover:bg-slate-50/80 transition-colors ${!est.correo ? 'opacity-60' : ''}`}>
+                                                        {filtroPostulacion !== 'postularon' && (
                                                         <td className="py-4 px-3">
-                                                            {est.correo && !est.notificacion_enviada && (
+                                                            {est.estado !== 'postulo' && est.correo && !est.notificacion_enviada && (
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={seleccionadosNP.has(est.rut)}
@@ -1672,6 +1974,7 @@ export default function SocialWorkerPortal() {
                                                                 />
                                                             )}
                                                         </td>
+                                                        )}
                                                         <td className="py-4 px-4 font-mono text-sm text-slate-600">{est.rut}</td>
                                                         <td className="py-4 px-4 font-medium text-slate-900">{est.nombre || '-'}</td>
                                                         <td className="py-4 px-4 text-sm">
@@ -1683,16 +1986,21 @@ export default function SocialWorkerPortal() {
                                                         </td>
                                                         <td className="py-4 px-4 text-sm text-slate-600">{est.carrera || '-'}</td>
                                                         <td className="py-4 px-4">
-                                                            {est.notificacion_enviada ? (
+                                                            {est.estado === 'postulo' ? (
+                                                                <Badge variant="success">✓ Postulado</Badge>
+                                                            ) : est.notificacion_enviada ? (
                                                                 <Badge variant="info">Notificado</Badge>
                                                             ) : est.correo ? (
-                                                                <Badge variant="warning">Pendiente</Badge>
+                                                                <Badge variant="warning">No postuló</Badge>
                                                             ) : (
                                                                 <Badge variant="danger">Sin correo</Badge>
                                                             )}
                                                         </td>
+                                                        {filtroPostulacion !== 'postularon' && (
                                                         <td className="py-4 px-4">
-                                                            {est.documento_url ? (
+                                                            {est.estado === 'postulo' ? (
+                                                                <span className="text-slate-300 text-sm">N/A</span>
+                                                            ) : est.documento_url ? (
                                                                 <div className="flex items-center gap-2">
                                                                     {est.estado === 'documento_validado' ? (
                                                                         <Badge variant="success">Validado</Badge>
@@ -1711,6 +2019,7 @@ export default function SocialWorkerPortal() {
                                                                 <span className="text-slate-300 text-sm">-</span>
                                                             )}
                                                         </td>
+                                                        )}
                                                     </tr>
                                                 ))}
                                         </tbody>
@@ -1718,11 +2027,11 @@ export default function SocialWorkerPortal() {
                                 </div>
 
                                 {/* Paginación */}
-                                {noPostulantesFiltrados.length > ESTUDIANTES_POR_PAGINA && (
+                                {estudiantesFUASFiltrados.length > ESTUDIANTES_POR_PAGINA && (
                                     <div className="flex items-center justify-between p-6 border-t border-slate-100">
                                         <span className="text-sm text-slate-400">
-                                            Mostrando {((paginaNP - 1) * ESTUDIANTES_POR_PAGINA) + 1} - {Math.min(paginaNP * ESTUDIANTES_POR_PAGINA, noPostulantesFiltrados.length)} de {noPostulantesFiltrados.length}
-                                            {busquedaNP && ` (filtrado de ${noPostulantes.length} total)`}
+                                            Mostrando {((paginaNP - 1) * ESTUDIANTES_POR_PAGINA) + 1} - {Math.min(paginaNP * ESTUDIANTES_POR_PAGINA, estudiantesFUASFiltrados.length)} de {estudiantesFUASFiltrados.length}
+                                            {(busquedaNP || filtroPostulacion !== 'todos') && ` (filtrado de ${estudiantesFUASLista.length} total)`}
                                         </span>
                                         <div className="flex gap-2 items-center">
                                             <button
@@ -1733,10 +2042,10 @@ export default function SocialWorkerPortal() {
                                                 Anterior
                                             </button>
                                             <span className="px-3 py-1 text-sm text-slate-600">
-                                                {paginaNP} de {Math.ceil(noPostulantesFiltrados.length / ESTUDIANTES_POR_PAGINA)}
+                                                {paginaNP} de {Math.ceil(estudiantesFUASFiltrados.length / ESTUDIANTES_POR_PAGINA)}
                                             </span>
                                             <button
-                                                disabled={paginaNP >= Math.ceil(noPostulantesFiltrados.length / ESTUDIANTES_POR_PAGINA)}
+                                                disabled={paginaNP >= Math.ceil(estudiantesFUASFiltrados.length / ESTUDIANTES_POR_PAGINA)}
                                                 onClick={() => setPaginaNP(p => p + 1)}
                                                 className="px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                             >
@@ -1886,10 +2195,27 @@ export default function SocialWorkerPortal() {
                                             Estudiantes Matriculados con Beneficios
                                         </h3>
                                         <p className="text-sm text-slate-400 mt-0.5">
-                                            {estudiantesBeneficiosFiltrados.length} estudiantes encontrados
+                                            {estudiantesBeneficiosFiltrados.length} estudiantes {(busquedaBeneficios || filtroBeneficio !== 'todos') ? 'filtrados' : 'encontrados'}
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={() => {
+                                                // Exportar todos los filtrados (no solo la página actual)
+                                                if (estudiantesBeneficiosFiltrados.length === 0) {
+                                                    toast.error('No hay datos para exportar')
+                                                    return
+                                                }
+                                                exportarEstudiantesConBeneficios(estudiantesBeneficiosFiltrados)
+                                                toast.exito(`${estudiantesBeneficiosFiltrados.length} registros exportados`)
+                                            }}
+                                            className="px-4 py-2.5 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-all flex items-center gap-2"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                            Exportar ({estudiantesBeneficiosFiltrados.length})
+                                        </button>
                                         <button
                                             onClick={() => {
                                                 if (seleccionadosBeneficios.size === estudiantesBeneficiosFiltrados.length) {
@@ -1957,7 +2283,7 @@ export default function SocialWorkerPortal() {
                                             setFiltroBeneficio(e.target.value)
                                             setPaginaBeneficios(1)
                                         }}
-                                        className="px-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent outline-none bg-white transition-all"
+                                        className="px-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none bg-white transition-all duration-200"
                                     >
                                         <option value="todos">Todos los beneficios</option>
                                         <option value="gratuidad">Gratuidad</option>
@@ -2153,7 +2479,7 @@ export default function SocialWorkerPortal() {
                                     <select
                                         value={miSede}
                                         onChange={(e) => setMiSede(e.target.value)}
-                                        className="flex-1 px-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent outline-none bg-white transition-all"
+                                        className="flex-1 px-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none bg-white transition-all duration-200"
                                     >
                                         <option value="">Seleccionar sede...</option>
                                         {sedesDisponibles.map(sede => (
@@ -2219,6 +2545,136 @@ export default function SocialWorkerPortal() {
                                 <li>Puedes tener múltiples bloques por día (ej: mañana y tarde)</li>
                             </ul>
                         </div>
+                    </div>
+                )}
+
+                {/* Tab Horarios Equipo (solo jefa DAE) */}
+                {tabActivo === 'horarios-equipo' && isJefaDAE && (
+                    <div className="space-y-6">
+                        {/* Selector de Asistente */}
+                        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6">
+                            <div className="flex items-center gap-3 mb-1">
+                                <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center">
+                                    <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-semibold text-slate-900">Horarios del Equipo</h3>
+                                    <p className="text-sm text-slate-400">
+                                        Consulta la disponibilidad de las asistentes sociales
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            {cargandoEquipo && asistentesEquipo.length === 0 ? (
+                                <div className="flex items-center justify-center py-8">
+                                    <div className="animate-spin rounded-full h-6 w-6 border-2 border-slate-200 border-t-emerald-600"></div>
+                                    <span className="ml-3 text-sm text-slate-400">Cargando equipo...</span>
+                                </div>
+                            ) : (
+                                <div className="mt-4">
+                                    <label className="block text-xs font-medium text-slate-500 mb-2 uppercase tracking-wider">
+                                        Seleccionar Asistente
+                                    </label>
+                                    <select
+                                        value={asistenteSeleccionadaEquipo}
+                                        onChange={(e) => handleSeleccionarAsistenteEquipo(e.target.value)}
+                                        className="w-full max-w-md px-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none bg-white transition-all"
+                                    >
+                                        <option value="">— Selecciona una asistente —</option>
+                                        {asistentesEquipo.map(a => (
+                                            <option key={a.rut} value={a.rut}>
+                                                {a.nombre}{a.sede ? ` · ${a.sede}` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+
+                                    {/* Lista visual de asistentes */}
+                                    {asistentesEquipo.length > 0 && !asistenteSeleccionadaEquipo && (
+                                        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                            {asistentesEquipo.map(a => (
+                                                <button
+                                                    key={a.rut}
+                                                    onClick={() => handleSeleccionarAsistenteEquipo(a.rut)}
+                                                    className="flex items-center gap-3 p-4 bg-slate-50 border border-slate-200/60 rounded-xl hover:bg-emerald-50 hover:border-emerald-200 transition-all text-left group"
+                                                >
+                                                    <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0 group-hover:bg-emerald-200 transition-colors">
+                                                        <span className="text-emerald-700 font-semibold text-sm">
+                                                            {a.nombre?.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                                                        </span>
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-medium text-slate-800 truncate">{a.nombre}</p>
+                                                        <p className="text-xs text-slate-400">{a.sede || 'Sin sede'}</p>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Horario de la asistente seleccionada */}
+                        {asistenteSeleccionadaEquipo && (
+                            <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6">
+                                {(() => {
+                                    const asistente = asistentesEquipo.find(a => a.rut === asistenteSeleccionadaEquipo)
+                                    return (
+                                        <div className="flex items-center justify-between mb-6">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
+                                                    <span className="text-emerald-700 font-semibold text-sm">
+                                                        {asistente?.nombre?.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <h3 className="text-base font-semibold text-slate-900">{asistente?.nombre}</h3>
+                                                    <p className="text-sm text-slate-400">
+                                                        {sedeEquipo ? `Sede: ${sedeEquipo}` : 'Sin sede asignada'}
+                                                        {asistente?.correo ? ` · ${asistente.correo}` : ''}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    setAsistenteSeleccionadaEquipo('')
+                                                    setHorarioEquipo(null)
+                                                    setSedeEquipo('')
+                                                }}
+                                                className="px-4 py-2 text-sm font-medium text-slate-500 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-all"
+                                            >
+                                                ← Volver
+                                            </button>
+                                        </div>
+                                    )
+                                })()}
+
+                                {cargandoEquipo ? (
+                                    <div className="flex items-center justify-center py-12">
+                                        <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-200 border-t-emerald-600"></div>
+                                        <span className="ml-3 text-sm text-slate-400">Cargando horario...</span>
+                                    </div>
+                                ) : horarioEquipo ? (
+                                    <ScheduleEditor
+                                        horarioInicial={horarioEquipo}
+                                        onSave={async () => {}}
+                                        readOnly={true}
+                                    />
+                                ) : (
+                                    <div className="text-center py-12">
+                                        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                            <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                        </div>
+                                        <p className="text-slate-500 font-medium">Sin horario configurado</p>
+                                        <p className="text-sm text-slate-400 mt-1">Esta asistente aún no ha definido su disponibilidad</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 )}
             </main>
@@ -2453,7 +2909,7 @@ export default function SocialWorkerPortal() {
                                 href={modalValidacion.documento_url || ''}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-sm text-blue-600 hover:underline mt-2 inline-block"
+                                className="text-sm text-indigo-600 hover:text-indigo-700 hover:underline mt-2 inline-block transition-colors"
                             >
                                 Abrir en nueva pestaña ↗
                             </a>
@@ -2479,7 +2935,7 @@ export default function SocialWorkerPortal() {
                                             toast.advertencia('Documento rechazado')
                                             setModalValidacion(null)
                                             const res = await getNoPostulantes()
-                                            if (res.exitoso) setNoPostulantes(res.estudiantes)
+                                            if (res.exitoso) setEstudiantesFUASLista(res.estudiantes)
                                         }
                                     } finally {
                                         setValidandoDoc(false)
@@ -2505,7 +2961,7 @@ export default function SocialWorkerPortal() {
                                             toast.exito('Documento validado')
                                             setModalValidacion(null)
                                             const res = await getNoPostulantes()
-                                            if (res.exitoso) setNoPostulantes(res.estudiantes)
+                                            if (res.exitoso) setEstudiantesFUASLista(res.estudiantes)
                                         }
                                     } finally {
                                         setValidandoDoc(false)

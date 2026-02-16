@@ -16,7 +16,7 @@ export default function Skeleton({
     ancho,
     alto
 }: SkeletonProps) {
-    const estilosBase = 'animate-pulse bg-gray-200'
+    const estilosBase = 'skeleton-shimmer'
 
     const estilosPorVariante = {
         text: 'rounded h-4',

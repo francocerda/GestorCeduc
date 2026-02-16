@@ -1,6 +1,5 @@
 /**
  * StudentProfileModal - Modal de perfil completo del estudiante
- * Muestra información detallada y historial de citas
  */
 
 import { useState, useEffect } from 'react';
@@ -29,6 +28,7 @@ interface PerfilEstudiante {
     telefono: string | null;
     sede: string;
     carrera: string | null;
+    cod_carrera: string | null;
     jornada: string | null;
     anno_ingreso: number | null;
     nivel_actual: number | null;
@@ -62,7 +62,6 @@ export function StudentProfileModal({
         if (isOpen && rutEstudiante) {
             cargarPerfil();
         } else {
-            // Reset cuando se cierra
             setPerfil(null);
             setHistorial([]);
             setError(null);
@@ -116,6 +115,15 @@ export function StudentProfileModal({
         return 'default';
     };
 
+    const InfoItem = ({ label, value, highlight }: { label: string; value: string | number | null; highlight?: boolean }) => (
+        <div>
+            <p className="text-xs text-slate-500">{label}</p>
+            <p className={`text-sm font-medium ${highlight ? 'text-emerald-600' : 'text-slate-900'}`}>
+                {value || '-'}
+            </p>
+        </div>
+    );
+
     return (
         <Modal
             isOpen={isOpen}
@@ -130,23 +138,18 @@ export function StudentProfileModal({
                     <Skeleton className="h-32 w-full" />
                 </div>
             ) : error ? (
-                <div className="p-6 text-center">
-                    <div className="text-red-500 mb-4">
-                        <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p>{error}</p>
-                    </div>
-                    <Button onClick={cargarPerfil}>Reintentar</Button>
+                <div className="py-12 text-center">
+                    <p className="text-slate-500 mb-4">{error}</p>
+                    <Button variant="secondary" onClick={cargarPerfil}>Reintentar</Button>
                 </div>
             ) : perfil && (
-                <div className="space-y-6">
+                <div className="space-y-5">
                     {/* Información Principal */}
-                    <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg p-5 border border-emerald-100">
+                    <div className="bg-slate-50 rounded-xl p-4">
                         <div className="flex justify-between items-start mb-4">
                             <div>
-                                <h3 className="text-xl font-semibold text-gray-900">{perfil.nombre}</h3>
-                                <p className="text-gray-600 text-sm">RUT: {perfil.rut}</p>
+                                <h3 className="text-lg font-semibold text-slate-900">{perfil.nombre}</h3>
+                                <p className="text-sm text-slate-500">{perfil.rut}</p>
                             </div>
                             {perfil.estado_fuas && (
                                 <Badge variant={getEstadoFuasBadge(perfil.estado_fuas)}>
@@ -155,105 +158,83 @@ export function StudentProfileModal({
                             )}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                                <span className="text-gray-500">Correo:</span>
-                                <p className="text-gray-800 font-medium">{perfil.correo || 'No registrado'}</p>
-                            </div>
-                            <div>
-                                <span className="text-gray-500">Teléfono:</span>
-                                <p className="text-gray-800 font-medium">{perfil.telefono || 'No registrado'}</p>
-                            </div>
-                            <div>
-                                <span className="text-gray-500">Sede:</span>
-                                <p className="text-gray-800 font-medium">{perfil.sede || 'Sin sede'}</p>
-                            </div>
-                            <div>
-                                <span className="text-gray-500">Carrera:</span>
-                                <p className="text-gray-800 font-medium">{perfil.carrera || 'No especificada'}</p>
-                            </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <InfoItem label="Correo" value={perfil.correo} />
+                            <InfoItem label="Teléfono" value={perfil.telefono} />
+                            <InfoItem label="Sede" value={perfil.sede} />
+                            <InfoItem label="Carrera" value={perfil.carrera} />
                         </div>
                     </div>
 
                     {/* Información Académica */}
-                    <div className="bg-white rounded-lg border border-gray-200 p-5">
-                        <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                            <span></span> Información Académica
+                    <div>
+                        <h4 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">
+                            Información Académica
                         </h4>
-                        <div className="grid grid-cols-3 gap-4 text-sm">
+                        <div className="grid grid-cols-3 gap-4">
+                            <InfoItem label="Código Carrera" value={perfil.cod_carrera} />
+                            <InfoItem label="Jornada" value={perfil.jornada} />
+                            <InfoItem label="Año Ingreso" value={perfil.anno_ingreso} />
+                            <InfoItem label="Nivel" value={perfil.nivel_actual ? `Nivel ${perfil.nivel_actual}` : null} />
+                            <InfoItem label="Estado Matrícula" value={perfil.estado_matricula} highlight={perfil.estado_matricula === 'VIGENTE'} />
+                            <InfoItem label="Beneficio" value={perfil.tipo_beneficio} />
+                        </div>
+                    </div>
+
+                    {/* Estado FUAS */}
+                    <div>
+                        <h4 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">
+                            Estado FUAS
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4">
+                            <InfoItem label="Estado actual" value={perfil.estado_fuas} />
                             <div>
-                                <span className="text-gray-500">Jornada:</span>
-                                <p className="font-medium">{perfil.jornada || '-'}</p>
-                            </div>
-                            <div>
-                                <span className="text-gray-500">Año ingreso:</span>
-                                <p className="font-medium">{perfil.anno_ingreso || '-'}</p>
-                            </div>
-                            <div>
-                                <span className="text-gray-500">Nivel actual:</span>
-                                <p className="font-medium">{perfil.nivel_actual || '-'}</p>
-                            </div>
-                            <div>
-                                <span className="text-gray-500">Estado matrícula:</span>
-                                <p className="font-medium">{perfil.estado_matricula || '-'}</p>
-                            </div>
-                            <div>
-                                <span className="text-gray-500">Beneficio:</span>
-                                <p className="font-medium">{perfil.tipo_beneficio || 'Sin beneficio'}</p>
-                            </div>
-                            <div>
-                                <span className="text-gray-500">Debe postular FUAS:</span>
-                                <p className="font-medium">{perfil.debe_postular ? 'Sí' : 'No'}</p>
+                                <p className="text-xs text-slate-500">Debe postular</p>
+                                <p className={`text-sm font-medium ${perfil.debe_postular ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                    {perfil.debe_postular ? 'Sí' : 'No'}
+                                </p>
                             </div>
                         </div>
                     </div>
 
                     {/* Historial de Citas */}
-                    <div className="bg-white rounded-lg border border-gray-200 p-5">
-                        <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                            <span></span> Historial de Citas
-                            <span className="text-xs font-normal text-gray-400">
-                                ({historial.length} {historial.length === 1 ? 'cita' : 'citas'})
-                            </span>
+                    <div>
+                        <h4 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">
+                            Historial de Citas ({historial.length})
                         </h4>
 
                         {historial.length === 0 ? (
-                            <p className="text-gray-500 text-sm text-center py-4">
-                                Este estudiante no tiene citas registradas
+                            <p className="text-slate-400 text-sm text-center py-6">
+                                Sin citas registradas
                             </p>
                         ) : (
-                            <div className="space-y-3 max-h-60 overflow-y-auto">
+                            <div className="space-y-2 max-h-48 overflow-y-auto">
                                 {historial.map((cita) => (
                                     <div 
                                         key={cita.id} 
-                                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl"
                                     >
                                         <div className="flex-1">
                                             <div className="flex items-center gap-2">
-                                                <span className="text-sm font-medium text-gray-800">
+                                                <span className="text-sm font-medium text-slate-800">
                                                     {formatDate(cita.inicio)}
                                                 </span>
                                                 <Badge variant={getEstadoCitaBadge(cita.estado)}>
                                                     {cita.estado}
                                                 </Badge>
                                             </div>
-                                            <p className="text-xs text-gray-500 mt-1">
-                                                Atendido por: {cita.nombre_asistente || 'No especificado'}
+                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                {cita.nombre_asistente || 'Sin asistente'}
                                             </p>
-                                            {cita.motivo && (
-                                                <p className="text-xs text-gray-600 mt-1">
-                                                    Motivo: {cita.motivo}
-                                                </p>
-                                            )}
                                         </div>
                                         {cita.documento_url && (
                                             <a
                                                 href={cita.documento_url}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="text-emerald-600 hover:text-emerald-700 text-xs"
+                                                className="text-slate-600 hover:text-slate-900 text-xs underline"
                                             >
-                                                Ver documento
+                                                Ver doc
                                             </a>
                                         )}
                                     </div>
@@ -263,21 +244,17 @@ export function StudentProfileModal({
                     </div>
 
                     {/* Botones de Acción */}
-                    <div className="flex justify-between items-center pt-4 border-t border-gray-200">
-                        <div className="text-xs text-gray-400">
-                            Última actualización: {perfil.actualizado_en ? formatDate(perfil.actualizado_en) : 'N/A'}
-                        </div>
+                    <div className="flex justify-between items-center pt-4 border-t border-slate-200">
+                        <p className="text-xs text-slate-400">
+                            Actualizado: {perfil.actualizado_en ? formatDate(perfil.actualizado_en) : '-'}
+                        </p>
                         <div className="flex gap-3">
                             <Button variant="secondary" onClick={onClose}>
                                 Cerrar
                             </Button>
                             {onRequestMeeting && perfil.correo && (
-                                <Button
-                                    variant="primary"
-                                    onClick={() => onRequestMeeting(perfil)}
-                                    className="bg-emerald-600 hover:bg-emerald-700"
-                                >
-                                    Solicitar Reunión
+                                <Button onClick={() => onRequestMeeting(perfil)}>
+                                    Solicitar reunión
                                 </Button>
                             )}
                         </div>

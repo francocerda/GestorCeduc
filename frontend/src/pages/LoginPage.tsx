@@ -83,41 +83,76 @@ export default function LoginPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 flex">
+        <div className="min-h-screen bg-mesh flex">
             {/* Panel izquierdo - Branding */}
-            <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-600 to-indigo-700 p-12 flex-col justify-between">
-                <div>
-                    <h1 className="text-white text-2xl font-semibold">GestorBecas</h1>
-                    <p className="text-blue-200 text-sm">CEDUC UCN</p>
+            <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 p-12 flex-col justify-between relative overflow-hidden">
+                {/* Decorative elements */}
+                <div className="absolute inset-0 opacity-10">
+                    <div className="absolute top-20 -left-10 w-72 h-72 bg-white rounded-full blur-3xl" />
+                    <div className="absolute bottom-20 right-10 w-96 h-96 bg-violet-300 rounded-full blur-3xl" />
+                    <div className="absolute top-1/2 left-1/3 w-64 h-64 bg-indigo-300 rounded-full blur-3xl" />
+                </div>
+                
+                <div className="relative">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 className="text-white text-xl font-bold">GestorBecas</h1>
+                            <p className="text-indigo-200 text-xs font-medium tracking-wide">CEDUC UCN</p>
+                        </div>
+                    </div>
                 </div>
 
-                <div className="text-white">
-                    <h2 className="text-4xl font-light leading-tight mb-4">
-                        Sistema de Gestión<br />de Becas y Beneficios
+                <div className="text-white relative">
+                    <h2 className="text-4xl font-bold leading-tight mb-4 tracking-tight">
+                        Sistema de Gestión<br />
+                        <span className="text-indigo-200 font-light">de Becas y Beneficios</span>
                     </h2>
-                    <p className="text-blue-200 text-lg">
-                        Plataforma para postulaciones FUAS y agendamiento de citas.
+                    <p className="text-indigo-200/90 text-lg max-w-md leading-relaxed">
+                        Plataforma centralizada para postulaciones FUAS, seguimiento de becas y agendamiento de citas.
                     </p>
+                    
+                    {/* Feature pills */}
+                    <div className="flex flex-wrap gap-2 mt-8">
+                        <span className="px-3 py-1.5 bg-white/10 backdrop-blur-sm rounded-full text-xs font-medium text-indigo-100 border border-white/10">
+                            📋 Postulación FUAS
+                        </span>
+                        <span className="px-3 py-1.5 bg-white/10 backdrop-blur-sm rounded-full text-xs font-medium text-indigo-100 border border-white/10">
+                            🎓 Becas y Gratuidad
+                        </span>
+                        <span className="px-3 py-1.5 bg-white/10 backdrop-blur-sm rounded-full text-xs font-medium text-indigo-100 border border-white/10">
+                            📅 Agendamiento de Citas
+                        </span>
+                    </div>
                 </div>
 
-                <div className="text-blue-300 text-sm">
-                    © 2026 CEDUC UCN
+                <div className="text-indigo-300/60 text-sm relative">
+                    © 2026 CEDUC UCN — Todos los derechos reservados
                 </div>
             </div>
 
             {/* Panel derecho - Formulario */}
             <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
-                <div className="w-full max-w-sm">
+                <div className="w-full max-w-sm animate-fade-in-up">
                     {/* Header móvil */}
-                    <div className="lg:hidden mb-8 text-center">
-                        <h1 className="text-xl font-semibold text-gray-900">GestorBecas</h1>
-                        <p className="text-gray-500 text-sm">CEDUC UCN</p>
+                    <div className="lg:hidden mb-10 text-center">
+                        <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-200">
+                            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                            </svg>
+                        </div>
+                        <h1 className="text-xl font-bold text-slate-900">GestorBecas</h1>
+                        <p className="text-slate-400 text-sm mt-0.5">CEDUC UCN</p>
                     </div>
 
                     {/* Título */}
                     <div className="mb-8">
-                        <h2 className="text-2xl font-semibold text-gray-900">Iniciar Sesión</h2>
-                        <p className="text-gray-500 mt-1">Ingresa tus credenciales institucionales</p>
+                        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Iniciar Sesión</h2>
+                        <p className="text-slate-400 mt-1.5 text-sm">Ingresa tus credenciales institucionales</p>
                     </div>
 
                     {/* Formulario */}
@@ -142,7 +177,10 @@ export default function LoginPage() {
 
                         {/* Error */}
                         {error && (
-                            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
+                                <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
                                 {error}
                             </div>
                         )}
@@ -162,14 +200,14 @@ export default function LoginPage() {
                         <button
                             type="button"
                             onClick={() => setShowRecoveryModal(true)}
-                            className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                            className="text-sm text-slate-400 hover:text-indigo-600 transition-colors"
                         >
                             ¿Olvidaste tu contraseña?
                         </button>
                     </div>
 
                     {/* Footer móvil */}
-                    <div className="mt-12 lg:hidden text-center text-xs text-gray-400">
+                    <div className="mt-16 lg:hidden text-center text-xs text-slate-300">
                         © 2026 CEDUC UCN
                     </div>
                 </div>

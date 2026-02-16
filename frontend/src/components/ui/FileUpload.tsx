@@ -71,10 +71,10 @@ export default function FileUpload({
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 className={`
-          border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
+          border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200
           ${arrastrando
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-300 hover:border-gray-400 bg-gray-50'
+                        ? 'border-indigo-500 bg-indigo-50/50 scale-[1.01]'
+                        : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30 bg-slate-50/50'
                     }
           ${disabled || loading ? 'opacity-50 cursor-not-allowed' : ''}
         `}

@@ -509,6 +509,7 @@ export const api = {
             telefono: string | null;
             sede: string;
             carrera: string | null;
+            cod_carrera: string | null;
             jornada: string | null;
             anno_ingreso: number | null;
             nivel_actual: number | null;

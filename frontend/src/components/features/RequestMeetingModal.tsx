@@ -1,6 +1,5 @@
 /**
  * RequestMeetingModal - Modal para solicitar reunión con un estudiante
- * Permite seleccionar motivo y agregar mensaje personalizado
  */
 
 import { useState } from 'react';
@@ -29,11 +28,11 @@ interface RequestMeetingModalProps {
 }
 
 const MOTIVOS_REUNION = [
-    { value: 'documentacion_fuas', label: 'Revisión de documentación FUAS', description: 'Documentos pendientes o incompletos' },
-    { value: 'actualizacion_antecedentes', label: ' Actualización de antecedentes', description: 'Actualizar información socioeconómica' },
-    { value: 'seguimiento_academico', label: 'Seguimiento académico', description: 'Revisar situación de estudios' },
-    { value: 'consulta_beneficios', label: 'Consulta sobre beneficios', description: 'Información de becas y beneficios' },
-    { value: 'otro', label: 'Otro motivo', description: 'Asunto general a especificar' }
+    { value: 'documentacion_fuas', label: 'Revisión de documentación FUAS' },
+    { value: 'actualizacion_antecedentes', label: 'Actualización de antecedentes' },
+    { value: 'seguimiento_academico', label: 'Seguimiento académico' },
+    { value: 'consulta_beneficios', label: 'Consulta sobre beneficios' },
+    { value: 'otro', label: 'Otro motivo' }
 ];
 
 export function RequestMeetingModal({
@@ -80,8 +79,8 @@ export function RequestMeetingModal({
             setResultado({
                 exito: res.exito,
                 mensaje: res.exito 
-                    ? `✅ Solicitud enviada correctamente a ${estudiante.correo}`
-                    : `❌ ${res.mensaje || 'Error al enviar'}`
+                    ? `Solicitud enviada a ${estudiante.correo}`
+                    : res.mensaje || 'Error al enviar'
             });
 
             if (res.exito && onSuccess) {
@@ -94,7 +93,7 @@ export function RequestMeetingModal({
             console.error('Error enviando solicitud:', err);
             setResultado({
                 exito: false,
-                mensaje: '❌ Error de conexión. Intente nuevamente.'
+                mensaje: 'Error de conexión. Intente nuevamente.'
             });
         } finally {
             setEnviando(false);
@@ -110,27 +109,27 @@ export function RequestMeetingModal({
             title="Solicitar Reunión"
             size="lg"
         >
-            <div className="space-y-5 max-h-[70vh] overflow-y-auto pr-1">
+            <div className="space-y-5">
                 {/* Info del destinatario */}
-                <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-100">
-                    <p className="text-sm text-gray-600 mb-1">Enviando solicitud a:</p>
-                    <p className="font-semibold text-gray-800">{estudiante.nombre}</p>
-                    <p className="text-sm text-gray-600">{estudiante.correo}</p>
+                <div className="bg-slate-50 rounded-xl p-4">
+                    <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Destinatario</p>
+                    <p className="font-medium text-slate-900">{estudiante.nombre}</p>
+                    <p className="text-sm text-slate-500">{estudiante.correo}</p>
                 </div>
 
                 {/* Selector de motivo */}
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Motivo de la reunión <span className="text-red-500">*</span>
+                    <label className="block text-sm font-medium text-slate-700 mb-3">
+                        Motivo de la reunión
                     </label>
                     <div className="space-y-2">
                         {MOTIVOS_REUNION.map((m) => (
                             <label
                                 key={m.value}
-                                className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                                className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
                                     motivo === m.value
-                                        ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
-                                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                        ? 'border-indigo-500 bg-indigo-50'
+                                        : 'border-slate-200 hover:border-slate-300'
                                 }`}
                             >
                                 <input
@@ -139,12 +138,9 @@ export function RequestMeetingModal({
                                     value={m.value}
                                     checked={motivo === m.value}
                                     onChange={(e) => setMotivo(e.target.value)}
-                                    className="mt-0.5 h-4 w-4 text-emerald-600 focus:ring-emerald-500"
+                                    className="h-4 w-4 text-slate-900 focus:ring-slate-500 border-slate-300"
                                 />
-                                <div>
-                                    <p className="text-sm font-medium text-gray-800">{m.label}</p>
-                                    <p className="text-xs text-gray-500">{m.description}</p>
-                                </div>
+                                <span className="text-sm text-slate-700">{m.label}</span>
                             </label>
                         ))}
                     </div>
@@ -152,41 +148,41 @@ export function RequestMeetingModal({
 
                 {/* Mensaje personalizado */}
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Mensaje adicional <span className="text-gray-400">(opcional)</span>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                        Mensaje adicional <span className="text-slate-400 font-normal">(opcional)</span>
                     </label>
                     <textarea
                         value={mensaje}
                         onChange={(e) => setMensaje(e.target.value)}
-                        placeholder="Agrega un mensaje personalizado para el estudiante..."
+                        placeholder="Agrega un mensaje personalizado..."
                         rows={3}
                         maxLength={500}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 resize-none text-sm"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-none text-sm transition-all duration-200"
                     />
-                    <p className="text-xs text-gray-400 text-right mt-1">
-                        {mensaje.length}/500 caracteres
+                    <p className="text-xs text-slate-400 text-right mt-1">
+                        {mensaje.length}/500
                     </p>
                 </div>
 
                 {/* Resultado */}
                 {resultado && (
-                    <div className={`p-4 rounded-lg ${
+                    <div className={`p-3 rounded-xl text-sm ${
                         resultado.exito 
-                            ? 'bg-green-50 border border-green-200 text-green-700'
-                            : 'bg-red-50 border border-red-200 text-red-700'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-red-50 text-red-700'
                     }`}>
-                        <p className="text-sm">{resultado.mensaje}</p>
+                        {resultado.mensaje}
                     </div>
                 )}
 
                 {/* Info del remitente */}
-                <div className="text-xs text-gray-500 bg-gray-50 rounded p-3">
-                    <p>El correo se enviará desde: <strong>Asuntos Estudiantiles CEDUC</strong></p>
-                    <p>Firmado por: <strong>{asistente?.nombre || 'Asistente Social'}</strong></p>
+                <div className="text-xs text-slate-500 pt-3 border-t border-slate-100">
+                    <p>Remitente: Asuntos Estudiantiles CEDUC</p>
+                    <p>Firmado por: {asistente?.nombre || 'Asistente Social'}</p>
                 </div>
 
                 {/* Botones */}
-                <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 sticky bottom-0 bg-white">
+                <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
                     <Button
                         variant="secondary"
                         onClick={handleClose}
@@ -195,22 +191,11 @@ export function RequestMeetingModal({
                         Cancelar
                     </Button>
                     <Button
-                        variant="primary"
                         onClick={handleSubmit}
                         disabled={!motivo || enviando || resultado?.exito}
-                        className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-400"
+                        loading={enviando}
                     >
-                        {enviando ? (
-                            <>
-                                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                Enviando...
-                            </>
-                        ) : (
-                            'Enviar Solicitud'
-                        )}
+                        Enviar solicitud
                     </Button>
                 </div>
             </div>

@@ -151,12 +151,25 @@ export function parsearCSVMinisterio(contenido: string): ResultadoParseCSV {
 /**
  * Lee un archivo File y retorna su contenido como string
  */
-export function leerArchivoComoTexto(archivo: File): Promise<string> {
+export function leerArchivoComoTexto(archivo: File, encoding?: string): Promise<string> {
     return new Promise((resolve, reject) => {
         const reader = new FileReader()
 
         reader.onload = (evento) => {
             const contenido = evento.target?.result as string
+            
+            // Si se usó UTF-8 y se detectan caracteres corruptos (mojibake),
+            // reintentar con Latin-1 (ISO-8859-1 / Windows-1252)
+            if (!encoding && /[\uFFFD]|[^\x00-\x7F]/.test(contenido)) {
+                // Verificar si hay signos de encoding incorrecto
+                const tieneMojibake = /Ã©|Ã¡|Ã±|Ã³|Ãº|Ã­|ï»¿/.test(contenido)
+                if (tieneMojibake) {
+                    // Reintentar con Latin-1
+                    leerArchivoComoTexto(archivo, 'ISO-8859-1').then(resolve).catch(reject)
+                    return
+                }
+            }
+            
             resolve(contenido)
         }
 
@@ -164,8 +177,8 @@ export function leerArchivoComoTexto(archivo: File): Promise<string> {
             reject(new Error('Error al leer el archivo'))
         }
 
-        // Leer como UTF-8
-        reader.readAsText(archivo, 'UTF-8')
+        // Intentar con el encoding especificado o UTF-8 por defecto
+        reader.readAsText(archivo, encoding || 'UTF-8')
     })
 }
 

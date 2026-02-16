@@ -23,13 +23,19 @@ function AppRoutes() {
   if (loading) {
     return (
       <div
-        className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600"
+        className="min-h-screen flex items-center justify-center bg-mesh"
         role="status"
         aria-label="Cargando aplicación"
       >
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-white mx-auto mb-4" aria-hidden="true"></div>
-          <p className="text-white text-xl font-semibold">Cargando...</p>
+        <div className="text-center animate-fade-in-up">
+          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-lg shadow-indigo-200">
+            <svg className="w-8 h-8 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          </div>
+          <p className="text-slate-600 text-base font-semibold">Cargando...</p>
+          <p className="text-slate-400 text-sm mt-1">GestorBecas CEDUC UCN</p>
         </div>
       </div>
     )
@@ -67,13 +73,16 @@ function AppRoutes() {
         <Route
           path="*"
           element={
-            <main id="main-content" className="min-h-screen flex items-center justify-center bg-red-50">
-              <div className="text-center">
-                <h1 className="text-4xl font-bold text-red-600 mb-4">404</h1>
-                <p className="text-gray-700">Página no encontrada</p>
+            <main id="main-content" className="min-h-screen flex items-center justify-center bg-mesh">
+              <div className="text-center animate-fade-in-up">
+                <div className="w-20 h-20 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
+                  <span className="text-3xl font-bold text-red-500">404</span>
+                </div>
+                <h1 className="text-xl font-bold text-slate-800 mb-2">Página no encontrada</h1>
+                <p className="text-slate-400 mb-6">La página que buscas no existe</p>
                 <a
                   href="/login"
-                  className="mt-4 inline-block text-blue-600 hover:underline"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-semibold text-sm hover:bg-indigo-700 transition-colors shadow-sm"
                 >
                   Volver al inicio
                 </a>

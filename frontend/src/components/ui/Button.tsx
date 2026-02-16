@@ -1,17 +1,12 @@
 import type React from 'react'
 
 interface PropiedadesBoton extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-    variante?: 'primary' | 'secondary' | 'danger' | 'ghost'
+    variante?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'success'
     tamano?: 'sm' | 'md' | 'lg'
     cargando?: boolean
     children: React.ReactNode
 }
 
-/**
- * Componente de botón reutilizable
- * Variantes: primary (azul), secondary (gris), danger (rojo), ghost (transparente)
- * Tamaños: sm (pequeño), md (mediano), lg (grande)
- */
 export default function Button({
     variante = 'primary',
     tamano = 'md',
@@ -19,30 +14,29 @@ export default function Button({
     disabled,
     children,
     className = '',
-    // Alias para compatibilidad
     variant,
     size,
     loading,
     ...props
 }: PropiedadesBoton & { variant?: PropiedadesBoton['variante']; size?: PropiedadesBoton['tamano']; loading?: boolean }) {
-    // Usar alias si están definidos
     const varianteFinal = variant || variante
     const tamanoFinal = size || tamano
     const cargandoFinal = loading !== undefined ? loading : cargando
 
-    const estilosBase = 'inline-flex items-center justify-center font-semibold rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed'
+    const estilosBase = 'inline-flex items-center justify-center font-semibold rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none active:scale-[0.97]'
 
     const variantes = {
-        primary: 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 focus:ring-blue-500',
-        secondary: 'bg-gray-200 text-gray-800 hover:bg-gray-300 active:bg-gray-400 focus:ring-gray-500',
-        danger: 'bg-red-600 text-white hover:bg-red-700 active:bg-red-800 focus:ring-red-500',
-        ghost: 'bg-transparent text-gray-700 hover:bg-gray-100 active:bg-gray-200 focus:ring-gray-400'
+        primary: 'bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-500 shadow-sm hover:shadow-md',
+        secondary: 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 focus:ring-slate-400 shadow-sm',
+        danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 shadow-sm hover:shadow-md',
+        ghost: 'bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-800 focus:ring-slate-400',
+        success: 'bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-500 shadow-sm hover:shadow-md'
     }
 
     const tamanos = {
-        sm: 'px-3 py-1.5 text-sm',
-        md: 'px-4 py-2.5 text-base',
-        lg: 'px-6 py-3 text-lg'
+        sm: 'px-3 py-1.5 text-xs gap-1.5',
+        md: 'px-4 py-2.5 text-sm gap-2',
+        lg: 'px-6 py-3 text-base gap-2'
     }
 
     return (
@@ -53,7 +47,7 @@ export default function Button({
         >
             {cargandoFinal && (
                 <svg
-                    className="animate-spin -ml-1 mr-2 h-4 w-4"
+                    className="animate-spin -ml-0.5 h-4 w-4"
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
                     viewBox="0 0 24 24"

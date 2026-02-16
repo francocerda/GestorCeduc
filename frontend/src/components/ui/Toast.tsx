@@ -22,34 +22,35 @@ interface ToastContextType {
 const ToastContext = createContext<ToastContextType | null>(null)
 
 // Estilos por tipo
-const estilosPorTipo: Record<TipoToast, { bg: string; icon: string; border: string }> = {
+const estilosPorTipo: Record<TipoToast, { bg: string; iconBg: string; iconColor: string; icon: string; border: string }> = {
     success: {
-        bg: 'bg-green-50',
-        border: 'border-green-200',
+        bg: 'bg-white',
+        border: 'border-emerald-200',
+        iconBg: 'bg-emerald-100',
+        iconColor: 'text-emerald-600',
         icon: '✓'
     },
     error: {
-        bg: 'bg-red-50',
+        bg: 'bg-white',
         border: 'border-red-200',
+        iconBg: 'bg-red-100',
+        iconColor: 'text-red-600',
         icon: '✕'
     },
     warning: {
-        bg: 'bg-amber-50',
+        bg: 'bg-white',
         border: 'border-amber-200',
+        iconBg: 'bg-amber-100',
+        iconColor: 'text-amber-600',
         icon: '⚠'
     },
     info: {
-        bg: 'bg-blue-50',
+        bg: 'bg-white',
         border: 'border-blue-200',
+        iconBg: 'bg-blue-100',
+        iconColor: 'text-blue-600',
         icon: 'ℹ'
     }
-}
-
-const iconosPorTipo: Record<TipoToast, string> = {
-    success: 'text-green-600',
-    error: 'text-red-600',
-    warning: 'text-amber-600',
-    info: 'text-blue-600'
 }
 
 // Componente Toast individual
@@ -71,15 +72,15 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
             role="alert"
             aria-live="polite"
             className={`
-        flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg
+        flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg
         ${estilos.bg} ${estilos.border}
         ${saliendo ? 'animate-slide-out' : 'animate-slide-in'}
       `}
         >
-            <span className={`text-lg ${iconosPorTipo[toast.tipo]}`}>
+            <span className={`flex-shrink-0 w-7 h-7 rounded-lg ${estilos.iconBg} ${estilos.iconColor} flex items-center justify-center text-sm font-bold`}>
                 {estilos.icon}
             </span>
-            <p className="text-gray-800 text-sm font-medium flex-1">
+            <p className="text-slate-700 text-sm font-medium flex-1">
                 {toast.mensaje}
             </p>
             <button
@@ -87,10 +88,10 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
                     setSaliendo(true)
                     setTimeout(onClose, 300)
                 }}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                className="text-slate-300 hover:text-slate-500 transition-colors p-1 rounded-lg hover:bg-slate-100"
                 aria-label="Cerrar notificación"
             >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
             </button>

@@ -76,8 +76,12 @@ export interface DatosInstituto {
   nombre: string | null
   correo: string | null
   carrera: string | null
+  cod_carrera: string | null
   sede: string | null
+  jornada: string | null
   anio_ingreso: number | null
+  nivel: number | null
+  estado_academico: string | null
   fecha_carga: string
   cargado_por: string | null
 }
@@ -98,9 +102,13 @@ export interface GestionFUAS {
   nombre: string | null
   correo: string | null
   carrera: string | null
+  cod_carrera: string | null
   sede: string | null
+  jornada: string | null
   roles: Role[] | null
   anio_ingreso: number | null
+  nivel: number | null
+  estado_academico: string | null
   origen: OrigenFUAS | null
   estado: EstadoGestionFUAS | null
   tipo_beneficio: string | null

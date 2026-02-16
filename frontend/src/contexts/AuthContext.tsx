@@ -12,6 +12,7 @@ interface AuthContextType {
   signIn: (username: string, password: string) => Promise<void>
   signOut: () => void
   isAsistenteSocial: boolean
+  isJefaDAE: boolean
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -40,6 +41,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Determinar si el usuario actual es asistente social
   const isAsistenteSocial = user ? tieneRolAsistente(user.roles) : false
+  // Determinar si es Jefa DAE (acceso completo administrativo)
+  // TODO: TEMPORAL - asis_ae incluido para testing, quitar después
+  const isJefaDAE = user ? user.roles.some(r => ['jef_dae', 'asis_ae'].includes(r.clave.toLowerCase())) : false
 
   useEffect(() => {
     const verificarSesionGuardada = () => {
@@ -123,7 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut, isAsistenteSocial }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signOut, isAsistenteSocial, isJefaDAE }}>
       {children}
     </AuthContext.Provider>
   )

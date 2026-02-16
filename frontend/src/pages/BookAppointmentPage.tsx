@@ -170,40 +170,40 @@ export default function BookAppointmentPage() {
 
     if (success) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50 flex items-center justify-center p-4">
+            <div className="min-h-screen bg-mesh flex items-center justify-center p-4">
                 <Card className="text-center max-w-md">
-                    <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="w-20 h-20 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
+                        <svg className="w-10 h-10 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
                     </div>
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">¡Cita Agendada!</h2>
-                    <p className="text-gray-600 mb-4">
+                    <h2 className="text-2xl font-bold text-slate-900 mb-2">¡Cita Agendada!</h2>
+                    <p className="text-slate-500 mb-4">
                         Tu cita ha sido agendada exitosamente. Recibirás un correo de confirmación.
                     </p>
-                    <p className="text-sm text-gray-500">Redirigiendo...</p>
+                    <p className="text-sm text-slate-400">Redirigiendo...</p>
                 </Card>
             </div>
         )
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+        <div className="min-h-screen bg-mesh">
             {/* Header */}
-            <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200">
+            <header className="glass-strong border-b border-slate-200/60 sticky top-0 z-40">
                 <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
                     <div className="flex items-center gap-4">
                         <button
                             onClick={() => navigate('/estudiante')}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            className="p-2 hover:bg-slate-100 rounded-xl transition-all duration-200"
                         >
-                            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                             </svg>
                         </button>
                         <div>
-                            <h1 className="text-xl font-bold text-gray-900">Agendar Cita</h1>
-                            <p className="text-sm text-gray-500">Paso {step} de 3</p>
+                            <h1 className="text-lg font-bold text-slate-900">Agendar Cita</h1>
+                            <p className="text-xs text-slate-400 font-medium">Paso {step} de 3</p>
                         </div>
                     </div>
                 </div>
@@ -215,7 +215,7 @@ export default function BookAppointmentPage() {
                     {[1, 2, 3].map((s) => (
                         <div
                             key={s}
-                            className={`h-2 flex-1 rounded-full transition-colors ${s <= step ? 'bg-blue-600' : 'bg-gray-200'
+                            className={`h-2 flex-1 rounded-full transition-all duration-500 ${s <= step ? 'bg-indigo-600' : 'bg-slate-200'
                                 }`}
                         />
                     ))}
@@ -229,7 +229,7 @@ export default function BookAppointmentPage() {
                     <Card title="Selecciona un Asistente Social" subtitle="Elige con quién deseas agendar tu cita">
                         {asistentesLoading ? (
                             <div className="flex items-center justify-center py-8">
-                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                             </div>
                         ) : asistentes.length > 0 ? (
                             <div className="space-y-3">
@@ -237,20 +237,20 @@ export default function BookAppointmentPage() {
                                     <button
                                         key={asistente.rut}
                                         onClick={() => handleSelectAsistente(asistente)}
-                                        className={`w-full p-4 rounded-lg border-2 text-left transition-all hover:border-blue-400 ${selectedAsistente?.rut === asistente.rut
-                                            ? 'border-blue-600 bg-blue-50'
-                                            : 'border-gray-200 bg-white hover:bg-gray-50'
+                                        className={`w-full p-4 rounded-xl border-2 text-left transition-all duration-200 hover:border-indigo-400 ${selectedAsistente?.rut === asistente.rut
+                                            ? 'border-indigo-600 bg-indigo-50'
+                                            : 'border-slate-200 bg-white hover:bg-slate-50'
                                             }`}
                                     >
                                         <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
+                                            <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center shadow-sm">
                                                 <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                                 </svg>
                                             </div>
                                             <div>
-                                                <p className="font-medium text-gray-900">{asistente.nombre}</p>
-                                                <p className="text-sm text-gray-500">{asistente.sede || 'Sede principal'}</p>
+                                                <p className="font-semibold text-slate-900">{asistente.nombre}</p>
+                                                <p className="text-sm text-slate-400">{asistente.sede || 'Sede principal'}</p>
                                             </div>
                                         </div>
                                     </button>
@@ -258,7 +258,7 @@ export default function BookAppointmentPage() {
                             </div>
                         ) : (
                             <div className="text-center py-8">
-                                <p className="text-gray-600">No hay asistentes sociales disponibles en este momento.</p>
+                                <p className="text-slate-500">No hay asistentes sociales disponibles en este momento.</p>
                             </div>
                         )}
                     </Card>
@@ -271,7 +271,7 @@ export default function BookAppointmentPage() {
                             <div className="space-y-6">
                                 {/* Date picker */}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label className="block text-sm font-medium text-slate-700 mb-2">
                                         Fecha de la cita
                                     </label>
                                     <input
@@ -280,7 +280,7 @@ export default function BookAppointmentPage() {
                                         onChange={(e) => handleSelectDate(e.target.value)}
                                         min={minDate}
                                         max={maxDate}
-                                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-200 bg-white"
                                     />
                                     {selectedDate && isWeekend(selectedDate) && (
                                         <p className="mt-2 text-sm text-amber-600">
@@ -288,7 +288,7 @@ export default function BookAppointmentPage() {
                                         </p>
                                     )}
                                     {selectedDate && hasAppointmentThisWeek && (
-                                        <div className="mt-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                                        <div className="mt-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
                                             ❌ Ya tienes una cita agendada para esta semana. Solo puedes tener 1 cita por semana.
                                         </div>
                                     )}
@@ -297,7 +297,7 @@ export default function BookAppointmentPage() {
                                 {/* Time slots */}
                                 {selectedDate && !isWeekend(selectedDate) && !hasAppointmentThisWeek && (
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        <label className="block text-sm font-medium text-slate-700 mb-2">
                                             Hora disponible - {formatDateLong(parseDateString(selectedDate))}
                                         </label>
                                         <TimeSlotPicker
@@ -332,17 +332,17 @@ export default function BookAppointmentPage() {
                     <div className="space-y-6">
                         <Card title="Confirmar Cita">
                             <div className="space-y-4">
-                                <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                                <div className="bg-slate-50 rounded-xl p-5 space-y-3 border border-slate-100">
                                     <div className="flex justify-between">
-                                        <span className="text-gray-600">Asistente Social:</span>
+                                        <span className="text-slate-500">Asistente Social:</span>
                                         <span className="font-medium">{selectedAsistente.nombre}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-gray-600">Fecha:</span>
+                                        <span className="text-slate-500">Fecha:</span>
                                         <span className="font-medium">{formatDateLong(selectedSlot.start)}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-gray-600">Hora:</span>
+                                        <span className="text-slate-500">Hora:</span>
                                         <span className="font-medium">
                                             {selectedSlot.start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} -
                                             {selectedSlot.end.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
@@ -351,13 +351,13 @@ export default function BookAppointmentPage() {
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label className="block text-sm font-medium text-slate-700 mb-2">
                                         Motivo de la cita
                                     </label>
                                     <select
                                         value={motivo}
                                         onChange={(e) => setMotivo(e.target.value)}
-                                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-200 bg-white"
                                     >
                                         <option value="Consulta FUAS">Consulta FUAS</option>
                                         <option value="Postulación FUAS">Postulación FUAS</option>
@@ -368,7 +368,7 @@ export default function BookAppointmentPage() {
                                 </div>
 
                                 {error && (
-                                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
                                         {error}
                                     </div>
                                 )}
