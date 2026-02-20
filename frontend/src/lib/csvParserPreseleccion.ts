@@ -179,8 +179,8 @@ export function parsearCSVPreseleccion(contenido: string): ResultadoParsePresele
         }
     }
 
-    console.log('📊 CSV Preselección - Columnas detectadas:', cabecera.slice(0, 15))
-    console.log('📊 Índices principales: RUT=', indiceRut, 'DV=', indiceDv, 'GRATUIDAD=', indiceGratuidad)
+    // console.log('[csvParserPreseleccion] Columnas detectadas:', cabecera.slice(0, 15))
+    // console.log('[csvParserPreseleccion] Índices principales: RUT=', indiceRut, 'DV=', indiceDv, 'GRATUIDAD=', indiceGratuidad)
 
     // Procesar filas de datos
     for (let i = 1; i < lineas.length; i++) {
@@ -259,8 +259,8 @@ export function parsearCSVPreseleccion(contenido: string): ResultadoParsePresele
         })
     }
 
-    console.log(`✅ CSV Preselección parseado: ${datos.length} registros válidos`)
-    console.log('📊 Resumen de beneficios:', resumen)
+    // console.log(`[csvParserPreseleccion] CSV parseado: ${datos.length} registros válidos`)
+    // console.log('[csvParserPreseleccion] Resumen de beneficios:', resumen)
 
     return {
         exitoso: true,

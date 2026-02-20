@@ -1,3 +1,8 @@
+/**
+ * Hook de dominio para gestión de estudiantes y asistentes.
+ *
+ * Encapsula consultas al backend con filtros y estado de UI.
+ */
 import { useState, useCallback } from 'react'
 import { api } from '../lib/api'
 import type { Estudiante, AsistenteSocial } from '../types/database'
@@ -38,7 +43,7 @@ export function useStudents() {
         } catch (err) {
             const mensaje = err instanceof Error ? err.message : 'Error al cargar estudiantes'
             setError(mensaje)
-            console.error('❌ Error al obtener estudiantes:', err)
+            // console.error('[useStudents] Error al obtener estudiantes:', err)
             return []
         } finally {
             setCargando(false)
@@ -54,7 +59,7 @@ export function useStudents() {
             const data = await api.getInfoEstudiante(rut)
             return data
         } catch (err) {
-            console.error('❌ Error al obtener estudiante:', err)
+            // console.error('[useStudents] Error al obtener estudiante:', err)
             return null
         } finally {
             setCargando(false)
@@ -69,12 +74,12 @@ export function useStudents() {
         try {
             const exito = await api.updateEstudiante(rut, cambios)
             if (!exito) throw new Error('Error al actualizar')
-            console.log('✅ Estudiante actualizado:', rut)
+            // console.log('[useStudents] Estudiante actualizado:', rut)
             return true
         } catch (err) {
             const mensaje = err instanceof Error ? err.message : 'Error al actualizar estudiante'
             setError(mensaje)
-            console.error('❌ Error al actualizar estudiante:', err)
+            // console.error('[useStudents] Error al actualizar estudiante:', err)
             return false
         } finally {
             setCargando(false)
@@ -86,7 +91,7 @@ export function useStudents() {
         try {
             return await api.countEstudiantesPendientes()
         } catch (err) {
-            console.error('❌ Error al contar estudiantes:', err)
+            // console.error('[useStudents] Error al contar estudiantes:', err)
             return 0
         }
     }, [])
@@ -124,7 +129,7 @@ export function useAsistentesSociales() {
         } catch (err) {
             const mensaje = err instanceof Error ? err.message : 'Error al cargar asistentes'
             setError(mensaje)
-            console.error('❌ Error al obtener asistentes:', err)
+            // console.error('[useStudents] Error al obtener asistentes:', err)
             return []
         } finally {
             setCargando(false)

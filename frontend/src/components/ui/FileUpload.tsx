@@ -1,3 +1,8 @@
+/**
+ * Componente de carga de archivos por selección o arrastre.
+ *
+ * Encapsula eventos de drag and drop y normaliza la entrega del archivo al padre.
+ */
 import { useRef, useState } from 'react'
 
 interface FileUploadProps {

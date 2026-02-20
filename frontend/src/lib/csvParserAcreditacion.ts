@@ -86,8 +86,8 @@ export function parsearCSVMinisterio(contenido: string): ResultadoParseCSV {
         (c.includes('OBSERVACION') || c.includes('OBS') || c.includes('NOTA'))
     )
 
-    console.log('📊 Columnas detectadas:', cabecera)
-    console.log('📊 Índices: RUT=', indiceRut, 'DV=', indiceDv, 'Tipo=', indiceTipo, 'Obs=', indiceObs)
+    // console.log('[csvParserAcreditacion] Columnas detectadas:', cabecera)
+    // console.log('[csvParserAcreditacion] Índices: RUT=', indiceRut, 'DV=', indiceDv, 'Tipo=', indiceTipo, 'Obs=', indiceObs)
 
     // Procesar filas de datos
     for (let i = 1; i < lineas.length; i++) {

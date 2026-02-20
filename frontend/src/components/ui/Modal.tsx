@@ -1,3 +1,8 @@
+/**
+ * Modal base con portal al `document.body`.
+ *
+ * Gestiona cierre por tecla Escape y bloqueo de scroll del fondo.
+ */
 import { useEffect } from 'react'
 import type React from 'react'
 import { createPortal } from 'react-dom'

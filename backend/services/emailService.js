@@ -1,3 +1,11 @@
+/**
+ * Servicio de correo del backend.
+ *
+ * Responsabilidades:
+ * - Construir plantillas HTML para notificaciones.
+ * - Enviar correos transaccionales e informativos por Elastic Email.
+ * - Exponer funciones de envío unitario y masivo.
+ */
 const fetch = require('node-fetch');
 
 const API_KEY = process.env.ELASTIC_EMAIL_API_KEY;
@@ -8,6 +16,117 @@ const URL_PLATAFORMA = process.env.FRONTEND_URL || 'http://localhost:5173';
 // ============================================
 // TEMPLATES HTML
 // ============================================
+
+/**
+ * Genera el HTML para confirmación de cita agendada
+ */
+function generarHtmlConfirmacionCita(datos) {
+  const { nombreEstudiante, nombreAsistente, sedeAsistente, fechaCita, motivo } = datos;
+  
+  const fechaFormateada = new Date(fechaCita).toLocaleString('es-CL', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .header { background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+        .header h1 { margin: 0 0 5px 0; font-size: 24px; }
+        .header p { margin: 0; opacity: 0.9; font-size: 14px; }
+        .content { background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; }
+        .success-icon { font-size: 48px; margin-bottom: 10px; }
+        .greeting { font-size: 18px; color: #1f2937; margin-bottom: 20px; }
+        .cita-box { background: #f0fdf4; border: 2px solid #10b981; border-radius: 12px; padding: 25px; margin: 25px 0; }
+        .cita-title { color: #059669; font-weight: bold; font-size: 16px; margin-bottom: 15px; display: flex; align-items: center; gap: 8px; }
+        .cita-detail { display: flex; margin-bottom: 12px; }
+        .cita-detail:last-child { margin-bottom: 0; }
+        .cita-label { color: #6b7280; min-width: 100px; font-size: 14px; }
+        .cita-value { color: #1f2937; font-weight: 500; font-size: 14px; }
+        .reminder-box { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px 20px; margin: 25px 0; border-radius: 0 8px 8px 0; }
+        .reminder-title { font-weight: bold; color: #92400e; margin-bottom: 8px; font-size: 14px; }
+        .reminder-list { margin: 0; padding-left: 20px; color: #92400e; font-size: 13px; }
+        .reminder-list li { margin-bottom: 5px; }
+        .cta { text-align: center; margin: 30px 0; }
+        .btn { display: inline-block; background: #059669; color: white; padding: 14px 35px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; }
+        .footer { background: #f9fafb; padding: 20px; text-align: center; color: #6b7280; font-size: 12px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb; border-top: none; }
+        .calendar-add { margin-top: 20px; padding-top: 20px; border-top: 1px dashed #d1d5db; text-align: center; }
+        .calendar-text { color: #6b7280; font-size: 13px; margin-bottom: 10px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <div class="success-icon">OK</div>
+          <h1>¡Cita Confirmada!</h1>
+          <p>Asuntos Estudiantiles CEDUC</p>
+        </div>
+        <div class="content">
+          <p class="greeting">Hola <strong>${nombreEstudiante}</strong>,</p>
+          
+          <p>Tu cita ha sido agendada exitosamente. A continuación, los detalles:</p>
+          
+          <div class="cita-box">
+            <div class="cita-title">Detalles de tu cita</div>
+            <div class="cita-detail">
+              <span class="cita-label">Fecha:</span>
+              <span class="cita-value">${fechaFormateada}</span>
+            </div>
+            <div class="cita-detail">
+              <span class="cita-label">Asistente:</span>
+              <span class="cita-value">${nombreAsistente}</span>
+            </div>
+            <div class="cita-detail">
+              <span class="cita-label">Sede:</span>
+              <span class="cita-value">${sedeAsistente || 'CEDUC'}</span>
+            </div>
+            ${motivo ? `
+            <div class="cita-detail">
+              <span class="cita-label">Motivo:</span>
+              <span class="cita-value">${motivo}</span>
+            </div>
+            ` : ''}
+          </div>
+          
+          <div class="reminder-box">
+            <div class="reminder-title">Recuerda llevar:</div>
+            <ul class="reminder-list">
+              <li>Cédula de identidad</li>
+              <li>Comprobante de postulación FUAS (si aplica)</li>
+              <li>Documentación de respaldo según tu caso</li>
+            </ul>
+          </div>
+          
+          <div class="cta">
+            <a href="${URL_PLATAFORMA}" class="btn">Ver mis citas</a>
+          </div>
+          
+          <div class="calendar-add">
+            <p class="calendar-text">Te recomendamos agregar esta cita a tu calendario para no olvidarla.</p>
+          </div>
+          
+          <p style="color: #6b7280; font-size: 14px; margin-top: 25px;">
+            Si necesitas cancelar o reagendar tu cita, puedes hacerlo desde la plataforma con al menos 24 horas de anticipación.
+          </p>
+        </div>
+        <div class="footer">
+          <p>Este correo fue enviado automáticamente al confirmar tu cita.</p>
+          <p>© ${new Date().getFullYear()} CEDUC UCN - Todos los derechos reservados</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
 
 /**
  * Genera el HTML para el correo de cancelación de cita
@@ -104,7 +223,7 @@ function generarHtmlNotificacionFUAS(nombreEstudiante) {
           <p>Te informamos que has sido identificado/a como estudiante que <strong>debe completar su postulación al FUAS</strong> (Formulario Único de Acreditación Socioeconómica) para acceder a beneficios estudiantiles.</p>
           
           <div class="alert">
-            <strong>⚠️ Importante:</strong> Para completar tu postulación, debes agendar una cita con la Encargada de Asuntos Estudiantiles.
+            <strong>Importante:</strong> Para completar tu postulación, debes agendar una cita con la Encargada de Asuntos Estudiantiles.
           </div>
           
           <p>Ingresa a la plataforma con tus credenciales institucionales:</p>
@@ -161,7 +280,7 @@ function generarHtmlRecordatorioFUAS(nombreEstudiante) {
     <body>
       <div class="container">
         <div class="header">
-          <h1>⚠️ Recordatorio FUAS</h1>
+          <h1>Recordatorio FUAS</h1>
           <p>No hemos detectado tu postulación</p>
         </div>
         <div class="content">
@@ -180,7 +299,7 @@ function generarHtmlRecordatorioFUAS(nombreEstudiante) {
           </ul>
           
           <div class="alert">
-            <strong>📅 Fecha límite:</strong> No dejes pasar el plazo. Postula lo antes posible para no perder tus beneficios.
+            <strong>Fecha límite:</strong> No dejes pasar el plazo. Postula lo antes posible para no perder tus beneficios.
           </div>
           
           <p style="text-align: center;">
@@ -219,10 +338,10 @@ function generarHtmlRecordatorioFUAS(nombreEstudiante) {
  * @returns {Promise<{exito: boolean, mensaje: string, transactionId?: string}>}
  */
 async function enviarCorreo(destinatario, asunto, htmlContent) {
-  console.log(`📧 Enviando correo a: ${destinatario}`);
+  // console.log(`[Email] Enviando correo a: ${destinatario}`);
 
   if (!API_KEY) {
-    console.error('❌ ELASTIC_EMAIL_API_KEY no configurada');
+    // console.error('[Email] ELASTIC_EMAIL_API_KEY no configurada');
     return { exito: false, mensaje: 'API Key no configurada' };
   }
 
@@ -245,18 +364,18 @@ async function enviarCorreo(destinatario, asunto, htmlContent) {
     const data = await response.json();
 
     if (data.success) {
-      console.log(`✅ Correo enviado a ${destinatario}:`, data.data?.transactionid);
+      // console.log(`[Email] Correo enviado a ${destinatario}:`, data.data?.transactionid);
       return {
         exito: true,
         mensaje: 'Correo enviado exitosamente',
         transactionId: data.data?.transactionid
       };
     } else {
-      console.error(`❌ Error API:`, data.error);
+      // console.error(`[Email] Error API:`, data.error);
       return { exito: false, mensaje: data.error || 'Error desconocido' };
     }
   } catch (error) {
-    console.error('❌ Error enviando correo:', error);
+    // console.error('[Email] Error enviando correo:', error);
     return { exito: false, mensaje: error.message || 'Error de conexión' };
   }
 }
@@ -269,6 +388,39 @@ async function sendCancellationEmail(destinatario, nombreEstudiante, fechaCita, 
     destinatario,
     'Actualización de tu cita - CEDUC',
     generarHtmlCancelacion(nombreEstudiante, fechaCita, motivo)
+  );
+}
+
+/**
+ * Envía correo de confirmación de cita agendada
+ * @param {Object} datos - Datos para el email
+ * @param {string} datos.destinatario - Email del estudiante
+ * @param {string} datos.nombreEstudiante - Nombre del estudiante
+ * @param {string} datos.nombreAsistente - Nombre del asistente social
+ * @param {string} datos.sedeAsistente - Sede del asistente
+ * @param {string} datos.fechaCita - Fecha/hora de la cita (ISO string)
+ * @param {string} [datos.motivo] - Motivo de la cita (opcional)
+ */
+async function enviarConfirmacionCita(datos) {
+  const { destinatario, nombreEstudiante, nombreAsistente, sedeAsistente, fechaCita, motivo } = datos;
+  
+  if (!destinatario) {
+    // console.log('[Email] No se puede enviar confirmación: estudiante sin correo');
+    return { exito: false, mensaje: 'Estudiante sin correo electrónico' };
+  }
+
+  // console.log(`[Email] Enviando confirmación de cita a: ${destinatario}`);
+
+  return enviarCorreo(
+    destinatario,
+    'Cita confirmada - CEDUC Asuntos Estudiantiles',
+    generarHtmlConfirmacionCita({
+      nombreEstudiante: nombreEstudiante || 'Estudiante',
+      nombreAsistente: nombreAsistente || 'Asistente Social',
+      sedeAsistente,
+      fechaCita,
+      motivo
+    })
   );
 }
 
@@ -297,7 +449,7 @@ async function enviarRecordatorioFUAS(estudiante) {
   }
   return enviarCorreo(
     correo,
-    '⚠️ CEDUC - Recuerda postular al FUAS',
+    'CEDUC - Recuerda postular al FUAS',
     generarHtmlRecordatorioFUAS(nombre || 'Estudiante')
   );
 }
@@ -308,7 +460,7 @@ async function enviarRecordatorioFUAS(estudiante) {
  * @returns {Promise<{exitosos: number, fallidos: number, resultados: Array}>}
  */
 async function enviarNotificacionesMasivas(estudiantes) {
-  console.log(`📬 Iniciando envío masivo a ${estudiantes.length} estudiantes...`);
+  // console.log(`[Email] Iniciando envío masivo a ${estudiantes.length} estudiantes...`);
 
   const resultados = [];
   let exitosos = 0;
@@ -334,7 +486,7 @@ async function enviarNotificacionesMasivas(estudiantes) {
     await new Promise(resolve => setTimeout(resolve, 200));
   }
 
-  console.log(`📊 Envío completado: ${exitosos} exitosos, ${fallidos} fallidos`);
+  // console.log(`[Email] Envío completado: ${exitosos} exitosos, ${fallidos} fallidos`);
   return { exitosos, fallidos, resultados };
 }
 
@@ -344,7 +496,7 @@ async function enviarNotificacionesMasivas(estudiantes) {
  * @returns {Promise<{exitosos: number, fallidos: number, resultados: Array}>}
  */
 async function enviarRecordatoriosMasivosFUAS(estudiantes) {
-  console.log(`📬 Iniciando envío de recordatorios a ${estudiantes.length} estudiantes...`);
+  // console.log(`[Email] Iniciando envío de recordatorios a ${estudiantes.length} estudiantes...`);
 
   const resultados = [];
   let exitosos = 0;
@@ -370,7 +522,7 @@ async function enviarRecordatoriosMasivosFUAS(estudiantes) {
     await new Promise(resolve => setTimeout(resolve, 200));
   }
 
-  console.log(`📊 Recordatorios completados: ${exitosos} exitosos, ${fallidos} fallidos`);
+  // console.log(`[Email] Recordatorios completados: ${exitosos} exitosos, ${fallidos} fallidos`);
   return { exitosos, fallidos, resultados };
 }
 
@@ -425,7 +577,7 @@ function generarHtmlSolicitudReunion(datos) {
     <body>
       <div class="container">
         <div class="header">
-          <h1>📋 Solicitud de Reunión</h1>
+          <h1>Solicitud de Reunión</h1>
           <p>Asuntos Estudiantiles CEDUC</p>
         </div>
         <div class="content">
@@ -435,32 +587,32 @@ function generarHtmlSolicitudReunion(datos) {
           
           <div class="info-box">
             <div class="info-row">
-              <span class="info-label">👤 Asistente:</span>
+              <span class="info-label">Asistente:</span>
               <span class="info-value">${nombreAsistente}</span>
             </div>
             <div class="info-row">
-              <span class="info-label">📍 Sede:</span>
+              <span class="info-label">Sede:</span>
               <span class="info-value">${sedeAsistente || 'CEDUC'}</span>
             </div>
             <div class="info-row">
-              <span class="info-label">📋 Motivo:</span>
+              <span class="info-label">Motivo:</span>
               <span class="info-value">${motivoTexto}</span>
             </div>
           </div>
           
           ${mensaje ? `
           <div class="message-box">
-            <p class="message-label">💬 Mensaje de la asistente:</p>
+            <p class="message-label">Mensaje de la asistente:</p>
             <p>"${mensaje}"</p>
           </div>
           ` : ''}
           
           <div class="urgent">
-            <p>⏰ Te recomendamos agendar tu cita dentro de los próximos <strong>5 días hábiles</strong>.</p>
+            <p>Te recomendamos agendar tu cita dentro de los próximos <strong>5 días hábiles</strong>.</p>
           </div>
           
           <div class="cta">
-            <a href="${URL_PLATAFORMA}" class="btn">📅 Agendar Cita Ahora</a>
+            <a href="${URL_PLATAFORMA}" class="btn">Agendar Cita Ahora</a>
           </div>
           
           <p style="color: #6b7280; font-size: 14px;">
@@ -501,7 +653,7 @@ async function enviarSolicitudReunion(datos) {
     formData.append('from', EMAIL_REMITENTE);
     formData.append('fromName', NOMBRE_REMITENTE);
     formData.append('to', estudiante.correo);
-    formData.append('subject', `📋 Solicitud de Reunión - ${asistente.nombre || 'Asuntos Estudiantiles'}`);
+    formData.append('subject', `Solicitud de Reunión - ${asistente.nombre || 'Asuntos Estudiantiles'}`);
     formData.append('bodyHtml', html);
     formData.append('isTransactional', 'true');
 
@@ -513,14 +665,14 @@ async function enviarSolicitudReunion(datos) {
     const result = await response.json();
 
     if (result.success) {
-      console.log(`✅ Solicitud de reunión enviada a ${estudiante.correo}`);
+      // console.log(`[Email] Solicitud de reunión enviada a ${estudiante.correo}`);
       return { exito: true, mensaje: 'Correo enviado', transactionId: result.data?.transactionid };
     } else {
-      console.error(`❌ Error enviando a ${estudiante.correo}:`, result.error);
+      // console.error(`[Email] Error enviando a ${estudiante.correo}:`, result.error);
       return { exito: false, mensaje: result.error || 'Error desconocido' };
     }
   } catch (error) {
-    console.error('Error en enviarSolicitudReunion:', error);
+    // console.error('Error en enviarSolicitudReunion:', error);
     return { exito: false, mensaje: error.message };
   }
 }
@@ -544,20 +696,20 @@ async function verificarConexion() {
 function generarHtmlNotificacionBeneficios({ nombreEstudiante, beneficios, anoProceso }) {
   // Mapeo de códigos a nombres legibles
   const nombresBeneficios = {
-    gratuidad: { nombre: 'Gratuidad', emoji: '🎓', color: '#059669' },
-    bvp: { nombre: 'Beca Vocación de Profesor', emoji: '👨‍🏫', color: '#7c3aed' },
-    bb: { nombre: 'Beca Bicentenario', emoji: '🇨🇱', color: '#2563eb' },
-    bea: { nombre: 'Beca de Excelencia Académica', emoji: '⭐', color: '#d97706' },
-    bdte: { nombre: 'Beca Discapacidad Técnica', emoji: '♿', color: '#0d9488' },
-    bjgm: { nombre: 'Beca Juan Gómez Millas', emoji: '📚', color: '#4f46e5' },
-    bnm: { nombre: 'Beca Nuevo Milenio', emoji: '🌟', color: '#0891b2' },
-    bhpe: { nombre: 'Beca Hijos Prof. de la Educación', emoji: '👨‍👩‍👧', color: '#db2777' },
-    fscu: { nombre: 'Fondo Solidario de Crédito Universitario', emoji: '💰', color: '#ea580c' }
+    gratuidad: { nombre: 'Gratuidad', emoji: '', color: '#059669' },
+    bvp: { nombre: 'Beca Vocación de Profesor', emoji: '', color: '#7c3aed' },
+    bb: { nombre: 'Beca Bicentenario', emoji: '', color: '#2563eb' },
+    bea: { nombre: 'Beca de Excelencia Académica', emoji: '', color: '#d97706' },
+    bdte: { nombre: 'Beca Discapacidad Técnica', emoji: '', color: '#0d9488' },
+    bjgm: { nombre: 'Beca Juan Gómez Millas', emoji: '', color: '#4f46e5' },
+    bnm: { nombre: 'Beca Nuevo Milenio', emoji: '', color: '#0891b2' },
+    bhpe: { nombre: 'Beca Hijos Prof. de la Educación', emoji: '', color: '#db2777' },
+    fscu: { nombre: 'Fondo Solidario de Crédito Universitario', emoji: '', color: '#ea580c' }
   };
 
   // Generar lista de beneficios
   const listaBeneficios = beneficios.map(b => {
-    const info = nombresBeneficios[b.tipo] || { nombre: b.tipo, emoji: '✅', color: '#6b7280' };
+    const info = nombresBeneficios[b.tipo] || { nombre: b.tipo, emoji: '', color: '#6b7280' };
     return `
       <div style="background: ${info.color}15; border-left: 4px solid ${info.color}; padding: 12px 15px; margin: 8px 0; border-radius: 0 8px 8px 0;">
         <span style="font-size: 18px;">${info.emoji}</span>
@@ -594,7 +746,7 @@ function generarHtmlNotificacionBeneficios({ nombreEstudiante, beneficios, anoPr
     <body>
       <div class="container">
         <div class="header">
-          <h1>🎉 ¡Felicitaciones!</h1>
+          <h1>Felicitaciones</h1>
           <p>Resultados de Preselección ${anoProceso || new Date().getFullYear()}</p>
         </div>
         <div class="content">
@@ -605,11 +757,11 @@ function generarHtmlNotificacionBeneficios({ nombreEstudiante, beneficios, anoPr
           
           <p>Nos complace informarte que según los resultados de la preselección del Ministerio de Educación, has sido beneficiado/a con los siguientes apoyos económicos:</p>
           
-          <div class="beneficios-title">📋 Tus Beneficios Asignados:</div>
+          <div class="beneficios-title">Tus Beneficios Asignados:</div>
           ${listaBeneficios}
           
           <div class="steps">
-            <strong>📌 Próximos pasos importantes:</strong>
+            <strong>Próximos pasos importantes:</strong>
             <ol>
               <li>Mantén tu matrícula vigente para no perder estos beneficios</li>
               <li>Revisa que tus datos estén actualizados en el sistema</li>
@@ -618,7 +770,7 @@ function generarHtmlNotificacionBeneficios({ nombreEstudiante, beneficios, anoPr
           </div>
           
           <div class="info-box">
-            <p style="margin: 0;"><strong>ℹ️ Importante:</strong> Estos beneficios están sujetos a la confirmación final del Ministerio de Educación y al cumplimiento de los requisitos de cada programa.</p>
+            <p style="margin: 0;"><strong>Importante:</strong> Estos beneficios están sujetos a la confirmación final del Ministerio de Educación y al cumplimiento de los requisitos de cada programa.</p>
           </div>
           
           <p style="text-align: center;">
@@ -663,7 +815,7 @@ async function enviarNotificacionBeneficios(datos) {
     formData.append('from', EMAIL_REMITENTE);
     formData.append('fromName', NOMBRE_REMITENTE);
     formData.append('to', estudiante.correo);
-    formData.append('subject', `🎓 ¡Felicitaciones! Has obtenido beneficios estudiantiles - CEDUC`);
+    formData.append('subject', 'Felicitaciones: has obtenido beneficios estudiantiles - CEDUC');
     formData.append('bodyHtml', html);
     formData.append('isTransactional', 'true');
 
@@ -675,14 +827,14 @@ async function enviarNotificacionBeneficios(datos) {
     const result = await response.json();
 
     if (result.success) {
-      console.log(`✅ Notificación de beneficios enviada a ${estudiante.correo}`);
+      // console.log(`[Email] Notificación de beneficios enviada a ${estudiante.correo}`);
       return { exito: true, mensaje: 'Correo enviado', transactionId: result.data?.transactionid };
     } else {
-      console.error(`❌ Error enviando a ${estudiante.correo}:`, result.error);
+      // console.error(`[Email] Error enviando a ${estudiante.correo}:`, result.error);
       return { exito: false, mensaje: result.error || 'Error desconocido' };
     }
   } catch (error) {
-    console.error('Error en enviarNotificacionBeneficios:', error);
+    // console.error('Error en enviarNotificacionBeneficios:', error);
     return { exito: false, mensaje: error.message };
   }
 }
@@ -724,12 +876,13 @@ async function enviarNotificacionesBeneficiosMasivas(listaEstudiantes, anoProces
     }
   }
 
-  console.log(`📧 Notificaciones de beneficios: ${resultados.exitosos} enviados, ${resultados.fallidos} fallidos`);
+  // console.log(`[Email] Notificaciones de beneficios: ${resultados.exitosos} enviados, ${resultados.fallidos} fallidos`);
   return resultados;
 }
 
 module.exports = {
   sendCancellationEmail,
+  enviarConfirmacionCita,
   enviarNotificacionFUAS,
   enviarRecordatorioFUAS,
   enviarNotificacionesMasivas,

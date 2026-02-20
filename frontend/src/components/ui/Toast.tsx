@@ -1,3 +1,8 @@
+/**
+ * Sistema global de notificaciones en pantalla.
+ *
+ * Provee contexto, render por portal y helpers para mensajes de éxito/error.
+ */
 import { useState, useEffect, createContext, useContext, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -28,7 +33,7 @@ const estilosPorTipo: Record<TipoToast, { bg: string; iconBg: string; iconColor:
         border: 'border-emerald-200',
         iconBg: 'bg-emerald-100',
         iconColor: 'text-emerald-600',
-        icon: '✓'
+        icon: 'OK'
     },
     error: {
         bg: 'bg-white',
@@ -42,14 +47,14 @@ const estilosPorTipo: Record<TipoToast, { bg: string; iconBg: string; iconColor:
         border: 'border-amber-200',
         iconBg: 'bg-amber-100',
         iconColor: 'text-amber-600',
-        icon: '⚠'
+        icon: '!'
     },
     info: {
         bg: 'bg-white',
         border: 'border-blue-200',
         iconBg: 'bg-blue-100',
         iconColor: 'text-blue-600',
-        icon: 'ℹ'
+        icon: 'i'
     }
 }
 
@@ -157,8 +162,16 @@ export function useToast() {
 
 // Alias en inglés para compatibilidad (usar useToast() en su lugar)
 export const toast = {
-    success: (_msg: string) => console.warn('Usa useToast() hook en su lugar'),
-    error: (_msg: string) => console.warn('Usa useToast() hook en su lugar'),
-    warning: (_msg: string) => console.warn('Usa useToast() hook en su lugar'),
-    info: (_msg: string) => console.warn('Usa useToast() hook en su lugar')
+    success: (_msg: string) => {
+        // console.warn('Usa useToast() hook en su lugar')
+    },
+    error: (_msg: string) => {
+        // console.warn('Usa useToast() hook en su lugar')
+    },
+    warning: (_msg: string) => {
+        // console.warn('Usa useToast() hook en su lugar')
+    },
+    info: (_msg: string) => {
+        // console.warn('Usa useToast() hook en su lugar')
+    }
 }

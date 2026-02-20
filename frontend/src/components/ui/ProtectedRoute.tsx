@@ -1,3 +1,8 @@
+/**
+ * Guardia de ruta para validar sesión y rol.
+ *
+ * Redirige automáticamente al portal correspondiente según tipo de usuario.
+ */
 import { Navigate, useLocation } from "react-router-dom"
 import { useAuth } from "../../contexts/AuthContext"
 import type React from "react"

@@ -1,3 +1,6 @@
+/**
+ * Utilidades para normalizar, formatear y validar RUT chileno.
+ */
 export function cleanRut(rut: string): string {
     return rut.replace(/[.\-\s]/g,'').toUpperCase()
 }

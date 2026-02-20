@@ -1,3 +1,8 @@
+/**
+ * Portal del estudiante.
+ *
+ * Muestra estado FUAS, historial de citas y acciones de gestión documental.
+ */
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -98,7 +103,7 @@ export default function StudentPortal() {
           setGestionFUASData(gestionFuas)
         }
       } catch (error) {
-        console.error('Error al cargar datos:', error)
+        // console.error('Error al cargar datos:', error)
       } finally {
         setCargando(false)
       }
@@ -120,7 +125,7 @@ export default function StudentPortal() {
         setCitas(citasData as CitaConAsistente[])
       }
     } catch (error) {
-      console.error('Error al cancelar cita:', error)
+      // console.error('Error al cancelar cita:', error)
       toast.error('Error al cancelar la cita')
     } finally {
       setCancelandoId(null)
@@ -150,7 +155,7 @@ export default function StudentPortal() {
       const gestionFuas = await api.getGestionFuas(user.rut)
       if (gestionFuas) setGestionFUASData(gestionFuas)
     } catch (error) {
-      console.error(error)
+      // console.error(error)
       toast.error('Error al subir comprobante')
     } finally {
       setSubiendoComprobante(false)

@@ -1,6 +1,11 @@
 /**
  * Cliente API centralizado v2
  * Reemplaza llamadas directas a Supabase y unifica instituteApi
+ *
+ * Convenciones:
+ * - Todas las rutas usan `VITE_API_URL` y caen a localhost en desarrollo.
+ * - Métodos `get*` retornan datos tipados.
+ * - Métodos de escritura lanzan error si el backend responde no-OK.
  */
 
 import type {
@@ -15,7 +20,7 @@ import type {
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
-// Tipos auxiliares importados de instituteApi logic
+// Tipos auxiliares para respuestas de backend.
 export interface ResultadoSync {
     exitoso: boolean;
     total: number;
@@ -41,6 +46,7 @@ export interface ResultadoDeteccion {
     mensaje: string;
 }
 
+// Filtros compatibles con endpoint `GET /api/estudiantes`.
 export interface FiltrosEstudiantes {
     busqueda?: string;
     debe_postular?: boolean;
@@ -70,6 +76,9 @@ export const api = {
     // AUTENTICACIÓN (sync login)
     // ==========================================
 
+    /**
+     * Sincroniza asistente social luego del login institucional.
+     */
     async syncAsistenteSocial(data: { rut: string; correo: string; nombre: string; roles: any[] }): Promise<{ exitoso: boolean }> {
         const res = await fetch(`${API_URL}/auth/sync-asistente`, {
             method: 'POST',
@@ -80,6 +89,9 @@ export const api = {
         return res.json();
     },
 
+    /**
+     * Sincroniza estudiante luego del login institucional.
+     */
     async syncEstudiante(data: { rut: string; correo: string; nombre: string; roles: any[] }): Promise<ResultadoSyncEstudiante> {
         const res = await fetch(`${API_URL}/auth/sync-estudiante`, {
             method: 'POST',
@@ -166,6 +178,9 @@ export const api = {
     // GESTIÓN ESTUDIANTES (useStudents)
     // ==========================================
 
+    /**
+     * Obtiene estudiantes con filtros opcionales para vistas administrativas.
+     */
     async getEstudiantes(filtros: FiltrosEstudiantes = {}): Promise<Estudiante[]> {
         const params = new URLSearchParams();
         if (filtros.busqueda) params.append('busqueda', filtros.busqueda);
@@ -262,6 +277,9 @@ export const api = {
     // GESTIÓN CITAS (useCitas)
     // ==========================================
 
+    /**
+     * Crea una cita entre estudiante y asistente social.
+     */
     async crearCita(cita: Partial<Cita>): Promise<Cita> {
         const res = await fetch(`${API_URL}/citas`, {
             method: 'POST',
@@ -290,6 +308,9 @@ export const api = {
         return res.json();
     },
 
+    /**
+     * Actualiza campos de una cita existente.
+     */
     async updateCita(id: string, updates: Partial<Cita>): Promise<boolean> {
         const res = await fetch(`${API_URL}/citas/${id}`, {
             method: 'PUT',
@@ -299,6 +320,9 @@ export const api = {
         return res.ok;
     },
 
+    /**
+     * Cancela cita y permite registrar motivo para notificación por correo.
+     */
     async cancelarCita(id: string, motivo?: string): Promise<boolean> {
         const res = await fetch(`${API_URL}/citas/${id}/cancelar`, {
             method: 'PUT',
@@ -319,6 +343,9 @@ export const api = {
     // GESTIÓN FUAS 
     // ==========================================
 
+    /**
+     * Obtiene estado FUAS consolidado de un estudiante por RUT.
+     */
     async getGestionFuas(rut: string): Promise<GestionFUAS | null> {
         const res = await fetch(`${API_URL}/gestion-fuas/${rut}`);
         if (!res.ok) throw new Error('Error obteniendo estado FUAS');
@@ -335,7 +362,7 @@ export const api = {
         return res.json();
     },
 
-    // Subir documento a Google Drive (nuevo)
+    // Subida de documentos a Google Drive vía backend.
     async subirDocumentoEstudiante(archivo: File, rut: string): Promise<{ exitoso: boolean; url: string; id: string }> {
         const formData = new FormData();
         formData.append('archivo', archivo);
@@ -351,7 +378,7 @@ export const api = {
         return res.json();
     },
 
-    // Subir documento de cita (asistente)
+    // Subida de documento de cierre de cita por asistente.
     async subirDocumentoCita(archivo: File, citaId: string): Promise<{ exitoso: boolean; url: string; id: string }> {
         const formData = new FormData();
         formData.append('archivo', archivo);
@@ -380,7 +407,7 @@ export const api = {
     },
 
     // ==========================================
-    // Metodos Postgres
+    // MÉTODOS DE APOYO SOBRE DATOS EN POSTGRESQL
     // ==========================================
 
     async verificarCitaSemana(rut: string, fecha?: string): Promise<{ tieneCita: boolean; cantidad: number }> {

@@ -1,5 +1,13 @@
+/**
+ * Campo de entrada reutilizable con soporte de label, icono y error.
+ */
 import type React from 'react'
 
+/**
+ * Input reutilizable con label, icono y manejo de error.
+ *
+ * Diseñado para formularios consistentes con el sistema visual del proyecto.
+ */
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
     label?: string
     error?: string
@@ -14,6 +22,7 @@ export default function Input({
     id,
     ...props
 }: InputProps) {
+    // Si no se entrega `id`, lo genera desde el label para asociar accesibilidad.
     const inputId = id || label?.toLowerCase().replace(/\s+/g, '-')
 
     return (

@@ -1,3 +1,11 @@
+/**
+ * Pool de conexiones PostgreSQL compartido por todo el backend.
+ *
+ * Configuración:
+ * - Lee variables de entorno `PG_*`.
+ * - Define límites de conexiones y timeouts para evitar bloqueos.
+ * - Cierra el proceso ante errores en clientes inactivos para forzar reinicio limpio.
+ */
 const { Pool } = require('pg');
 
 const pool = new Pool({
@@ -12,7 +20,7 @@ const pool = new Pool({
 });
 
 pool.on('error', (err, client) => {
-    console.error('Unexpected error on idle client', err);
+    // console.error('Unexpected error on idle client', err);
     process.exit(-1);
 });
 

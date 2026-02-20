@@ -1,3 +1,8 @@
+/**
+ * Cliente de integración con API externa CEDUC.
+ *
+ * Expone autenticación y recuperación de contraseña para el flujo de acceso.
+ */
 import type { LoginResponse, RecuperacionResponse } from "../types/auth"
 
 const API_BASE_URL = 'https://academico.ceduc.cl/AcompanamientoAPISegura/api'
@@ -13,7 +18,7 @@ export const ceducApi = {
      */
     async login(username: string, password: string): Promise<LoginResponse> {
         try {
-            console.log(' Iniciando login con:', username)
+            // console.log('[ceducApi] Iniciando login con:', username)
             const response = await fetch(`${API_BASE_URL}/Login`, {
                 method: 'POST',
                 headers: {
@@ -30,7 +35,7 @@ export const ceducApi = {
 
             const data: LoginResponse = await response.json()
 
-            console.log(' Respuesta de la API:', data)
+            // console.log('[ceducApi] Respuesta de la API recibida')
 
             if (data.logged_in !== 'true') {
                 throw new Error('Credenciales inválidas')
@@ -38,7 +43,7 @@ export const ceducApi = {
             
             return data
         } catch (error) {
-            console.error('❌ Error en login:', error)
+            // console.error('[ceducApi] Error en login:', error)
             if (error instanceof Error) {
                 throw error
             } else {
@@ -56,7 +61,7 @@ export const ceducApi = {
      */
     async recuperarContrasena(rut: string): Promise<RecuperacionResponse> {
         try {
-            console.log('📧 Solicitando recuperación de contraseña para:', rut)
+            // console.log('[ceducApi] Solicitando recuperación de contraseña para:', rut)
 
             const response = await fetch(`${API_BASE_URL}/RecuperacionContrasena`, {
                 method: 'POST',
@@ -72,12 +77,12 @@ export const ceducApi = {
 
             const data: RecuperacionResponse = await response.json()
 
-            console.log('✅ Respuesta recuperación:', data)
+            // console.log('[ceducApi] Respuesta de recuperación recibida')
 
             return data
 
         } catch (error) {
-            console.error('❌ Error en recuperación:', error)
+            // console.error('[ceducApi] Error en recuperación:', error)
 
             if (error instanceof Error) {
                 throw error

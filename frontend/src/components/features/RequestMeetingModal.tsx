@@ -90,7 +90,7 @@ export function RequestMeetingModal({
                 }, 2000);
             }
         } catch (err) {
-            console.error('Error enviando solicitud:', err);
+            // console.error('Error enviando solicitud:', err);
             setResultado({
                 exito: false,
                 mensaje: 'Error de conexión. Intente nuevamente.'

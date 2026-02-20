@@ -1,3 +1,8 @@
+/**
+ * Contexto de autenticación de la aplicación.
+ *
+ * Maneja sesión local, login/logout y determinación de permisos por rol.
+ */
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { ceducApi } from '../lib/ceducApi'
 import { api } from '../lib/api'
@@ -54,10 +59,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (savedUser && savedToken) {
           const userData: User = JSON.parse(savedUser)
           setUser(userData)
-          console.log('✅ Sesión restaurada desde localStorage')
+          // console.log('[Auth] Sesión restaurada desde localStorage')
         }
       } catch (error) {
-        console.error('❌ Error al restaurar sesión:', error)
+        // console.error('[Auth] Error al restaurar sesión:', error)
         localStorage.removeItem('ceduc_user')
         localStorage.removeItem('ceduc_token')
       } finally {
@@ -70,18 +75,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (username: string, password: string) => {
     try {
-      console.log('🔐 Iniciando proceso de login...')
+      // console.log('[Auth] Iniciando proceso de login...')
 
       const apiResponse = await ceducApi.login(username, password)
 
-      console.log('✅ API CEDUC respondió:', apiResponse)
+      // console.log('[Auth] API CEDUC respondió')
 
       // Verificar si tiene rol de asistente social
       const esAsistente = tieneRolAsistente(apiResponse.roles)
       const rolAsistente = obtenerRolAsistente(apiResponse.roles)
 
-      console.log('🔍 ¿Es Asistente Social?:', esAsistente)
-      console.log('🔍 Roles del usuario:', apiResponse.roles.map(r => r.clave))
+      // console.log('[Auth] ¿Es Asistente Social?:', esAsistente)
+      // console.log('[Auth] Roles del usuario:', apiResponse.roles.map(r => r.clave))
 
       // Si es asistente, usar ese rol como currentRole, sino usar el primero
       const currentRole = rolAsistente || apiResponse.roles[0]
@@ -95,7 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         token: apiResponse.token
       }
 
-      console.log('👤 Usuario creado:', userData)
+      // console.log('[Auth] Usuario creado:', userData)
 
       // Sincronizar según el tipo de usuario
       if (esAsistente) {
@@ -109,21 +114,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setUser(userData)
 
-      console.log('✅ Login completado exitosamente')
+      // console.log('[Auth] Login completado exitosamente')
 
     } catch (error) {
-      console.log('❌ Error en signIn:', error)
+      // console.log('[Auth] Error en signIn:', error)
       throw error
     }
   }
 
   const signOut = async () => {
-    console.log('🚪 Cerrando sesión...')
+    // console.log('[Auth] Cerrando sesión...')
     setUser(null)
     localStorage.removeItem('ceduc_user')
     localStorage.removeItem('ceduc_token')
 
-    console.log('✅ Sesión cerrada')
+    // console.log('[Auth] Sesión cerrada')
   }
 
   return (
@@ -138,7 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
  */
 async function sincronizarAsistenteSocial(userData: User) {
   try {
-    console.log('🔄 Sincronizando Asistente Social con PostgreSQL...')
+    // console.log('[Auth] Sincronizando Asistente Social con PostgreSQL...')
 
     await api.syncAsistenteSocial({
       rut: userData.rut,
@@ -147,9 +152,9 @@ async function sincronizarAsistenteSocial(userData: User) {
       roles: userData.roles
     })
 
-    console.log('✅ Asistente Social sincronizado')
+    // console.log('[Auth] Asistente Social sincronizado')
   } catch (error) {
-    console.error('❌ Error en sincronización de Asistente Social:', error)
+    // console.error('[Auth] Error en sincronización de Asistente Social:', error)
   }
 }
 
@@ -158,7 +163,7 @@ async function sincronizarAsistenteSocial(userData: User) {
  */
 async function sincronizarEstudiante(userData: User) {
   try {
-    console.log('🔄 Sincronizando Estudiante con PostgreSQL...')
+    // console.log('[Auth] Sincronizando Estudiante con PostgreSQL...')
 
     const resultado = await api.syncEstudiante({
       rut: userData.rut,
@@ -167,15 +172,15 @@ async function sincronizarEstudiante(userData: User) {
       roles: userData.roles
     })
 
-    console.log('✅ Estudiante sincronizado')
+    // console.log('[Auth] Estudiante sincronizado')
 
     if (resultado.estadoFuas) {
-      console.log('📋 Estado FUAS encontrado:', resultado.estadoFuas.estado)
+      // console.log('[Auth] Estado FUAS encontrado:', resultado.estadoFuas.estado)
     } else {
-      console.log('ℹ️ Estudiante no tiene estado FUAS asignado')
+      // console.log('[Auth] Estudiante no tiene estado FUAS asignado')
     }
   } catch (error) {
-    console.error('❌ Error en sincronización de Estudiante:', error)
+    // console.error('[Auth] Error en sincronización de Estudiante:', error)
   }
 }
 

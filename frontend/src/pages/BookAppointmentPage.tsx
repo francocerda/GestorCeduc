@@ -1,3 +1,11 @@
+/**
+ * Página de agendamiento de citas para estudiantes.
+ *
+ * Flujo principal:
+ * 1) selección de asistente,
+ * 2) selección de fecha/hora,
+ * 3) confirmación y creación de cita.
+ */
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -11,11 +19,15 @@ import Button from '../components/ui/Button'
 import TimeSlotPicker from '../components/features/TimeSlotPicker'
 
 export default function BookAppointmentPage() {
+    // Contexto de usuario autenticado y navegación.
     const { user } = useAuth()
     const navigate = useNavigate()
+
+    // Hooks de dominio para citas y asistentes.
     const { crearCita, fetchCitasEnRango, loading: citasLoading } = useCitas()
     const { fetchAsistentes, loading: asistentesLoading } = useAsistentesSociales()
 
+    // Estado de datos de negocio.
     const [asistentes, setAsistentes] = useState<AsistenteSocial[]>([])
     const [selectedAsistente, setSelectedAsistente] = useState<AsistenteSocial | null>(null)
     const [horarioAsistente, setHorarioAsistente] = useState<HorarioAtencion | null>(null)
@@ -28,7 +40,7 @@ export default function BookAppointmentPage() {
     const [success, setSuccess] = useState(false)
     const [hasAppointmentThisWeek, setHasAppointmentThisWeek] = useState(false)
 
-    // Load social workers
+    // Carga asistentes disponibles al iniciar la pantalla.
     useEffect(() => {
         const cargarAsistentes = async () => {
             const data = await fetchAsistentes()
@@ -40,7 +52,7 @@ export default function BookAppointmentPage() {
         cargarAsistentes()
     }, [fetchAsistentes])
 
-    // Load assistant's schedule when selected
+    // Carga horario del asistente seleccionado para filtrar slots disponibles.
     useEffect(() => {
         const cargarHorario = async () => {
             if (!selectedAsistente) {
@@ -52,19 +64,19 @@ export default function BookAppointmentPage() {
                 const data = await api.getHorarioAsistente(selectedAsistente.rut)
                 setHorarioAsistente(data.horario_atencion)
             } catch (error) {
-                console.error('Error cargando horario:', error)
+                // console.error('Error cargando horario:', error)
                 setHorarioAsistente(null)
             }
         }
         cargarHorario()
     }, [selectedAsistente])
 
-    // Load existing appointments when date/asistente changes
+    // Carga citas del día para bloquear horarios ya ocupados.
     useEffect(() => {
         const cargarCitas = async () => {
             if (!selectedAsistente || !selectedDate) return
 
-            // Fix: Parse date correctly to avoid timezone offset
+            // Parse manual para evitar desplazamiento por zona horaria.
             const [year, month, day] = selectedDate.split('-').map(Number)
             const dateObj = new Date(year, month - 1, day)
 
@@ -76,12 +88,12 @@ export default function BookAppointmentPage() {
 
             const citas = await fetchCitasEnRango(selectedAsistente.rut, startOfDay.toISOString(), endOfDay.toISOString())
             setExistingCitas(citas)
-            setSelectedSlot(null) // Reset selection when date changes
+            setSelectedSlot(null) // Reinicia selección si cambia fecha/asistente.
         }
         cargarCitas()
     }, [selectedAsistente, selectedDate, fetchCitasEnRango])
 
-    // Check if student already has an appointment this week
+    // Regla de negocio: estudiante puede tener máximo 1 cita por semana.
     useEffect(() => {
         const verificarCitaSemana = async () => {
             if (!user || !selectedDate) {
@@ -93,7 +105,7 @@ export default function BookAppointmentPage() {
                 const resultado = await api.verificarCitaSemana(user.rut, selectedDate)
                 setHasAppointmentThisWeek(resultado.tieneCita)
             } catch (error) {
-                console.error('Error verificando cita semanal:', error)
+                // console.error('Error verificando cita semanal:', error)
                 setHasAppointmentThisWeek(false)
             }
         }
@@ -130,6 +142,7 @@ export default function BookAppointmentPage() {
         setError(null)
 
         try {
+            // Persistir siempre en UTC para consistencia con backend/BD.
             const citaData: CitaInsert = {
                 rut_estudiante: user.rut,
                 rut_asistente: selectedAsistente.rut,
@@ -155,13 +168,13 @@ export default function BookAppointmentPage() {
         }
     }
 
-    // Get min date (tomorrow) and max date (30 days from now)
+    // Ventana de reserva: desde mañana hasta 30 días en adelante.
     const today = new Date()
     const minDate = new Date(today.setDate(today.getDate() + 1)).toISOString().split('T')[0]
     const maxDate = new Date(today.setDate(today.getDate() + 30)).toISOString().split('T')[0]
 
     const isWeekend = (dateStr: string): boolean => {
-        // Fix: Parse date correctly to avoid timezone offset
+        // Parse manual para evitar desfase de día por timezone.
         const [year, month, day] = dateStr.split('-').map(Number)
         const date = new Date(year, month - 1, day)
         const dayOfWeek = date.getDay()
@@ -189,7 +202,7 @@ export default function BookAppointmentPage() {
 
     return (
         <div className="min-h-screen bg-mesh">
-            {/* Header */}
+            {/* Encabezado */}
             <header className="glass-strong border-b border-slate-200/60 sticky top-0 z-40">
                 <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
                     <div className="flex items-center gap-4">
@@ -209,7 +222,7 @@ export default function BookAppointmentPage() {
                 </div>
             </header>
 
-            {/* Progress bar */}
+            {/* Barra de progreso */}
             <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
                 <div className="flex items-center gap-2">
                     {[1, 2, 3].map((s) => (
@@ -222,9 +235,9 @@ export default function BookAppointmentPage() {
                 </div>
             </div>
 
-            {/* Content */}
+            {/* Contenido principal del flujo */}
             <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
-                {/* Step 1: Select Social Worker */}
+                {/* Paso 1: Selección de asistente */}
                 {step === 1 && (
                     <Card title="Selecciona un Asistente Social" subtitle="Elige con quién deseas agendar tu cita">
                         {asistentesLoading ? (
@@ -264,12 +277,12 @@ export default function BookAppointmentPage() {
                     </Card>
                 )}
 
-                {/* Step 2: Select Date and Time */}
+                {/* Paso 2: Selección de fecha y hora */}
                 {step === 2 && selectedAsistente && (
                     <div className="space-y-6">
                         <Card title="Selecciona Fecha y Hora">
                             <div className="space-y-6">
-                                {/* Date picker */}
+                                {/* Selector de fecha */}
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-2">
                                         Fecha de la cita
@@ -284,17 +297,17 @@ export default function BookAppointmentPage() {
                                     />
                                     {selectedDate && isWeekend(selectedDate) && (
                                         <p className="mt-2 text-sm text-amber-600">
-                                            ⚠️ Has seleccionado un fin de semana. No hay atención esos días.
+                                            Has seleccionado un fin de semana. No hay atención esos días.
                                         </p>
                                     )}
                                     {selectedDate && hasAppointmentThisWeek && (
                                         <div className="mt-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-                                            ❌ Ya tienes una cita agendada para esta semana. Solo puedes tener 1 cita por semana.
+                                            Ya tienes una cita agendada para esta semana. Solo puedes tener 1 cita por semana.
                                         </div>
                                     )}
                                 </div>
 
-                                {/* Time slots */}
+                                {/* Horarios disponibles */}
                                 {selectedDate && !isWeekend(selectedDate) && !hasAppointmentThisWeek && (
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -327,7 +340,7 @@ export default function BookAppointmentPage() {
                     </div>
                 )}
 
-                {/* Step 3: Confirm */}
+                {/* Paso 3: Confirmación */}
                 {step === 3 && selectedAsistente && selectedSlot && (
                     <div className="space-y-6">
                         <Card title="Confirmar Cita">

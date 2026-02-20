@@ -1,5 +1,19 @@
+/**
+ * Botón base del sistema de diseño.
+ *
+ * Centraliza variantes, tamaños y estado de carga para mantener consistencia UI.
+ */
 import type React from 'react'
 
+/**
+ * Botón reutilizable del sistema de diseño.
+ *
+ * Incluye:
+ * - Variantes visuales (primary, secondary, danger, ghost, success).
+ * - Tamaños estándar (sm, md, lg).
+ * - Estado de carga con spinner.
+ * - Compatibilidad con props en español e inglés (`variante`/`variant`, etc.).
+ */
 interface PropiedadesBoton extends React.ButtonHTMLAttributes<HTMLButtonElement> {
     variante?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'success'
     tamano?: 'sm' | 'md' | 'lg'
@@ -19,6 +33,7 @@ export default function Button({
     loading,
     ...props
 }: PropiedadesBoton & { variant?: PropiedadesBoton['variante']; size?: PropiedadesBoton['tamano']; loading?: boolean }) {
+    // Prioriza alias en inglés cuando existen, manteniendo compatibilidad histórica.
     const varianteFinal = variant || variante
     const tamanoFinal = size || tamano
     const cargandoFinal = loading !== undefined ? loading : cargando

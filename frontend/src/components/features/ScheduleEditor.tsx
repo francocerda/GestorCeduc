@@ -1,3 +1,9 @@
+/**
+ * Editor visual de horario semanal para asistentes sociales.
+ *
+ * Permite seleccionar bloques de 30 minutos, convertir selección a rangos
+ * persistibles en BD y guardar cambios en el backend.
+ */
 import { useState, useEffect, useCallback } from 'react'
 import Button from '../ui/Button'
 import type { HorarioAtencion } from '../../types/database'
@@ -63,6 +69,7 @@ export default function ScheduleEditor({ horarioInicial, onSave, loading, readOn
     const [isDragging, setIsDragging] = useState(false)
     const [dragMode, setDragMode] = useState<'select' | 'deselect'>('select')
 
+    // Convierte rangos guardados en BD a bloques individuales seleccionables en UI.
     const convertirDesdeRangos = useCallback((horario: HorarioAtencion): Record<DiaSemana, Set<string>> => {
         const resultado: Record<DiaSemana, Set<string>> = {
             lunes: new Set(), martes: new Set(), miercoles: new Set(), jueves: new Set(), viernes: new Set()
@@ -90,6 +97,7 @@ export default function ScheduleEditor({ horarioInicial, onSave, loading, readOn
         return resultado
     }, [])
 
+    // Convierte bloques seleccionados en UI a rangos compactos para almacenamiento.
     const convertirARangos = useCallback((sel: Record<DiaSemana, Set<string>>): HorarioAtencion => {
         const horario: HorarioAtencion = {}
 
@@ -303,7 +311,7 @@ export default function ScheduleEditor({ horarioInicial, onSave, loading, readOn
                                     ${todosSeleccionados ? 'text-emerald-600' : 'text-slate-400'}
                                 `}
                             >
-                                {todosSeleccionados ? '✓ Todo' : 'Todos'}
+                                {todosSeleccionados ? 'Todo seleccionado' : 'Todos'}
                             </button>
                         )
                     })}
@@ -347,7 +355,7 @@ export default function ScheduleEditor({ horarioInicial, onSave, loading, readOn
                                     ${todosSeleccionados ? 'text-emerald-600' : 'text-slate-400'}
                                 `}
                             >
-                                {todosSeleccionados ? '✓ Todo' : 'Todos'}
+                                {todosSeleccionados ? 'Todo seleccionado' : 'Todos'}
                             </button>
                         )
                     })}

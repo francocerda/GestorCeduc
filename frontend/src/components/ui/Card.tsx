@@ -1,5 +1,16 @@
+/**
+ * Contenedor reutilizable para secciones de contenido.
+ *
+ * Provee estructura uniforme de título, acciones y cuerpo.
+ */
 import type React from 'react'
 
+/**
+ * Contenedor visual reutilizable.
+ *
+ * Soporta encabezado opcional con `title`, `subtitle`, `actions`
+ * y permite desactivar padding interno con `noPadding`.
+ */
 interface CardProps {
     children: React.ReactNode
     className?: string

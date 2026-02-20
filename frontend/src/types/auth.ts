@@ -1,3 +1,8 @@
+/**
+ * Tipos de dominio para autenticación y sesión de usuario.
+ *
+ * Se usan en `ceducApi`, `AuthContext` y componentes de login.
+ */
 export interface Role {
     id: string
     clave: string

@@ -1,3 +1,11 @@
+/**
+ * Componente raíz del frontend.
+ *
+ * Responsabilidades:
+ * - Inyectar providers globales (`AuthProvider`, `ToastProvider`).
+ * - Definir rutas públicas y protegidas.
+ * - Mostrar pantalla de carga inicial mientras se resuelve autenticación.
+ */
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ToastProvider } from './components/ui/Toast'
@@ -17,6 +25,14 @@ function App() {
   )
 }
 
+/**
+ * Define todas las rutas de la aplicación.
+ *
+ * Reglas clave:
+ * - `/login` es pública.
+ * - `/estudiante`, `/agendar` y `/asistente` requieren sesión.
+ * - Ruta `*` maneja 404.
+ */
 function AppRoutes() {
   const { loading } = useAuth()
 

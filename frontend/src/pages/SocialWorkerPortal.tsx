@@ -1,3 +1,9 @@
+/**
+ * Portal principal para asistentes sociales y jefatura DAE.
+ *
+ * Integra módulos de directorio, citas, sincronización, FUAS,
+ * beneficios y administración de horarios.
+ */
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -56,6 +62,14 @@ export default function SocialWorkerPortal() {
     const toast = useToast()
     const { contarEstudiantesPendientes } = useStudents()
     const { fetchCitasHoy, fetchCitasByAsistente, cambiarEstadoCita } = useCitas()
+
+    /**
+     * Guía de lectura del componente:
+     * 1) Estados por módulo (citas, directorio, FUAS, beneficios, horarios).
+     * 2) Datos derivados (filtros, paginación, contadores).
+     * 3) Handlers de negocio (cargar, sincronizar, notificar, validar).
+     * 4) Render por pestañas.
+     */
 
     // Estados
     const [citasHoy, setCitasHoy] = useState<CitaConEstudiante[]>([])
@@ -268,7 +282,7 @@ export default function SocialWorkerPortal() {
                 const todasData = await fetchCitasByAsistente(user.rut)
                 setTodasCitas(todasData as CitaConEstudiante[])
             } catch (error) {
-                console.error('Error al cargar datos:', error)
+                // console.error('Error al cargar datos:', error)
             } finally {
                 setCargando(false)
             }
@@ -301,7 +315,7 @@ export default function SocialWorkerPortal() {
             setDirectorio(data.estudiantes as EstudianteDirectorio[])
             setDirectorioTotal(data.total)
         } catch (error) {
-            console.error('Error cargando directorio:', error)
+            // console.error('Error cargando directorio:', error)
             toast.error('Error al cargar estudiantes')
         } finally {
             setDirectorioCargando(false)
@@ -326,7 +340,7 @@ export default function SocialWorkerPortal() {
                 }
                 setMiHorario(horarioData.horario_atencion)
             } catch (error) {
-                console.error('Error cargando sedes:', error)
+                // console.error('Error cargando sedes:', error)
             }
         }
         cargarSedesYMiSede()
@@ -386,7 +400,7 @@ export default function SocialWorkerPortal() {
             setMiSede(horarioData.sede || '')
             setSedesDisponibles(sedesData)
         } catch (error) {
-            console.error('Error cargando horario:', error)
+            // console.error('Error cargando horario:', error)
             toast.error('Error al cargar configuración')
         } finally {
             setCargandoHorario(false)
@@ -401,7 +415,7 @@ export default function SocialWorkerPortal() {
             setMiHorario(horario)
             toast.exito('Horario actualizado correctamente')
         } catch (error) {
-            console.error('Error guardando horario:', error)
+            // console.error('Error guardando horario:', error)
             toast.error('Error al guardar horario')
             throw error
         }
@@ -415,7 +429,7 @@ export default function SocialWorkerPortal() {
             setMiSede(sede)
             toast.exito('Sede actualizada')
         } catch (error) {
-            console.error('Error guardando sede:', error)
+            // console.error('Error guardando sede:', error)
             toast.error('Error al guardar sede')
         }
     }
@@ -429,7 +443,7 @@ export default function SocialWorkerPortal() {
             const otras = asistentes.filter(a => a.rut !== user?.rut)
             setAsistentesEquipo(otras)
         } catch (error) {
-            console.error('Error cargando asistentes:', error)
+            // console.error('Error cargando asistentes:', error)
             toast.error('Error al cargar equipo')
         } finally {
             setCargandoEquipo(false)
@@ -449,7 +463,7 @@ export default function SocialWorkerPortal() {
             setHorarioEquipo(data.horario_atencion)
             setSedeEquipo(data.sede || '')
         } catch (error) {
-            console.error('Error cargando horario:', error)
+            // console.error('Error cargando horario:', error)
             toast.error('Error al cargar horario')
         } finally {
             setCargandoEquipo(false)
@@ -530,7 +544,7 @@ export default function SocialWorkerPortal() {
                 toast.error(resultado.mensaje)
             }
         } catch (error) {
-            console.error('Error en sincronización:', error)
+            // console.error('Error en sincronización:', error)
             toast.error('Error al conectar con el servidor')
         } finally {
             setSincronizando(false)
@@ -567,7 +581,7 @@ export default function SocialWorkerPortal() {
                 toast.error(resultado.mensaje || 'Error al cruzar datos')
             }
         } catch (error) {
-            console.error('Error en cruce de datos:', error)
+            // console.error('Error en cruce de datos:', error)
             toast.error('Error al procesar el cruce')
         } finally {
             setCruzandoDatos(false)
@@ -641,7 +655,7 @@ export default function SocialWorkerPortal() {
             toast.exito(`${estudiantesCruzados.length} estudiantes matriculados que deben postular`)
 
         } catch (error) {
-            console.error('Error cargando pendientes:', error)
+            // console.error('Error cargando pendientes:', error)
             toast.error('Error al cargar estudiantes')
         }
     }
@@ -696,7 +710,7 @@ export default function SocialWorkerPortal() {
                 toast.advertencia(`${resultado.fallidos} correo(s) fallido(s)`)
             }
         } catch (error) {
-            console.error('Error al enviar:', error)
+            // console.error('Error al enviar:', error)
             toast.error('Error al enviar notificaciones')
         } finally {
             setEnviandoNotificacion(false)
@@ -729,11 +743,11 @@ export default function SocialWorkerPortal() {
             if (resultado.datos.length === 0) {
                 toast.error('No se encontraron registros válidos')
             } else {
-                toast.exito(`✓ ${resultado.filasValidas} registros listos para cargar`)
+                toast.exito(`Registros listos para cargar: ${resultado.filasValidas}`)
             }
 
         } catch (error) {
-            console.error('Error al procesar CSV:', error)
+            // console.error('Error al procesar CSV:', error)
             toast.error('Error al procesar el archivo')
         } finally {
             setProcesandoCSV(false)
@@ -956,7 +970,7 @@ export default function SocialWorkerPortal() {
                                             exportarDirectorioEstudiantes(data.estudiantes)
                                             toast.exito(`${data.estudiantes.length} registros exportados`)
                                         } catch (error) {
-                                            console.error('Error exportando:', error)
+                                            // console.error('Error exportando:', error)
                                             toast.error('Error al exportar')
                                         } finally {
                                             setExportando(false)
@@ -1597,9 +1611,9 @@ export default function SocialWorkerPortal() {
                                             return
                                         }
 
-                                        toast.exito(`✓ ${resultado.filasValidas} postulantes encontrados en el CSV`)
+                                        toast.exito(`Postulantes encontrados en el CSV: ${resultado.filasValidas}`)
                                     } catch (error) {
-                                        console.error('Error al procesar CSV:', error)
+                                        // console.error('Error al procesar CSV:', error)
                                         toast.error('Error al procesar el archivo')
                                     } finally {
                                         setProcesandoCSVFUAS(false)
@@ -1648,7 +1662,7 @@ export default function SocialWorkerPortal() {
                                                     toast.error(resultado.mensaje || 'Error al detectar')
                                                 }
                                             } catch (error) {
-                                                console.error('Error detectando:', error)
+                                                // console.error('Error detectando:', error)
                                                 toast.error('Error al procesar')
                                             } finally {
                                                 setDetectandoNoPostulantes(false)
@@ -1671,8 +1685,8 @@ export default function SocialWorkerPortal() {
                                         <div className="mt-2 text-sm text-slate-600 grid grid-cols-2 gap-2">
                                             <p>Matriculados: <span className="font-medium">{resultadoDeteccion.totalMatriculados}</span></p>
                                             <p>Del CSV: <span className="font-medium">{resultadoDeteccion.totalPostulantes}</span></p>
-                                            <p className="text-emerald-700">✓ Postularon: <span className="font-medium">{resultadoDeteccion.siPostularon || 0}</span></p>
-                                            <p className="text-amber-700">⚠ No postularon: <span className="font-medium">{resultadoDeteccion.noPostularon}</span></p>
+                                            <p className="text-emerald-700">Postularon: <span className="font-medium">{resultadoDeteccion.siPostularon || 0}</span></p>
+                                            <p className="text-amber-700">No postularon: <span className="font-medium">{resultadoDeteccion.noPostularon}</span></p>
                                         </div>
                                     )}
                                 </div>
@@ -1739,7 +1753,7 @@ export default function SocialWorkerPortal() {
                                                     : 'bg-white text-emerald-600 border-emerald-200 hover:border-emerald-300'
                                                 }`}
                                             >
-                                                ✓ Postularon ({totalPostularon})
+                                                Postularon ({totalPostularon})
                                             </button>
                                             <button
                                                 onClick={() => { setFiltroPostulacion('no_postularon'); setPaginaNP(1) }}
@@ -1748,7 +1762,7 @@ export default function SocialWorkerPortal() {
                                                     : 'bg-white text-amber-600 border-amber-200 hover:border-amber-300'
                                                 }`}
                                             >
-                                                ⚠ No Postularon ({totalNoPostularon})
+                                                No Postularon ({totalNoPostularon})
                                             </button>
                                         </div>
 
@@ -1893,7 +1907,7 @@ export default function SocialWorkerPortal() {
                                                     toast.advertencia(`${resultado.fallidos} fallido(s)`)
                                                 }
                                             } catch (error) {
-                                                console.error('Error:', error)
+                                                // console.error('Error:', error)
                                                 toast.error('Error al enviar recordatorios')
                                             } finally {
                                                 setEnviandoRecordatorio(false)
@@ -1987,7 +2001,7 @@ export default function SocialWorkerPortal() {
                                                         <td className="py-4 px-4 text-sm text-slate-600">{est.carrera || '-'}</td>
                                                         <td className="py-4 px-4">
                                                             {est.estado === 'postulo' ? (
-                                                                <Badge variant="success">✓ Postulado</Badge>
+                                                                <Badge variant="success">Postulado</Badge>
                                                             ) : est.notificacion_enviada ? (
                                                                 <Badge variant="info">Notificado</Badge>
                                                             ) : est.correo ? (
@@ -2106,7 +2120,7 @@ export default function SocialWorkerPortal() {
                                             toast.error('Error al procesar CSV')
                                         }
                                     } catch (error) {
-                                        console.error('Error procesando CSV:', error)
+                                        // console.error('Error procesando CSV:', error)
                                         toast.error('Error al leer el archivo')
                                     } finally {
                                         setProcesandoCSVBeneficios(false)
@@ -2170,7 +2184,7 @@ export default function SocialWorkerPortal() {
                                                         toast.error(resultado.error || 'Error en el cruce')
                                                     }
                                                 } catch (error) {
-                                                    console.error('Error en cruce:', error)
+                                                    // console.error('Error en cruce:', error)
                                                     toast.error('Error al realizar el cruce')
                                                 } finally {
                                                     setCruzandoBeneficios(false)
@@ -2252,7 +2266,7 @@ export default function SocialWorkerPortal() {
                                                         toast.advertencia(`${resultado.fallidos} notificaciones fallaron`)
                                                     }
                                                 } catch (error) {
-                                                    console.error('Error notificando:', error)
+                                                    // console.error('Error notificando:', error)
                                                     toast.error('Error al enviar notificaciones')
                                                 } finally {
                                                     setEnviandoNotificacionBeneficios(false)
@@ -2863,7 +2877,7 @@ export default function SocialWorkerPortal() {
                                             setTodasCitas(todas)
                                         }
                                     } catch (error) {
-                                        console.error('Error:', error)
+                                        // console.error('Error:', error)
                                         toast.error('Error al completar cita')
                                     } finally {
                                         setCompletandoCita(false)

@@ -3,9 +3,10 @@
  * Maneja la sincronización con SQL Server y el cruce de datos
  */
 
-// URL del backend (cambiar en producción)
-const BACKEND_URL = 'http://localhost:3001'
-console.log('API Backend URL:', BACKEND_URL)
+// URL base del backend sin sufijo `/api`.
+// Si existe `VITE_API_URL`, se normaliza removiendo `/api`.
+const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api').replace(/\/api\/?$/, '')
+// console.log('[instituteApi] Backend URL:', BACKEND_URL)
 
 // Tipos
 export interface ResultadoSync {
@@ -62,7 +63,7 @@ export async function verificarBackend(): Promise<boolean> {
         const data = await response.json()
         return data.status === 'ok'
     } catch (error) {
-        console.error('❌ Backend no disponible:', error)
+        // console.error('[instituteApi] Backend no disponible:', error)
         return false
     }
 }
@@ -87,7 +88,7 @@ export async function syncEstudiantesInstituto(): Promise<ResultadoSync> {
 
         return await response.json()
     } catch (error) {
-        console.error('❌ Error sincronizando instituto:', error)
+        // console.error('[instituteApi] Error sincronizando instituto:', error)
         return {
             exitoso: false,
             total: 0,
@@ -112,7 +113,7 @@ export async function cargarDatosMinisterio(
     datos: { rut: string; tipo: string; beneficio?: string; cargado_por?: string }[]
 ): Promise<ResultadoCargaMinisterio> {
     try {
-        console.log(`📤 Enviando ${datos.length} registros al backend...`)
+        // console.log(`[instituteApi] Enviando ${datos.length} registros al backend...`)
 
         const response = await fetch(`${BACKEND_URL}/api/cargar-datos-ministerio`, {
             method: 'POST',
@@ -122,7 +123,7 @@ export async function cargarDatosMinisterio(
             body: JSON.stringify({ datos })
         })
 
-        console.log('📥 Respuesta recibida, status:', response.status)
+        // console.log('[instituteApi] Respuesta recibida, status:', response.status)
 
         if (!response.ok) {
             let errorMsg = 'Error al cargar datos'
@@ -139,9 +140,9 @@ export async function cargarDatosMinisterio(
         let resultado: ResultadoCargaMinisterio
         try {
             resultado = await response.json()
-            console.log('✅ Respuesta parseada:', resultado.mensaje)
+            // console.log('[instituteApi] Respuesta parseada:', resultado.mensaje)
         } catch (parseError) {
-            console.error('❌ Error parseando respuesta JSON:', parseError)
+            // console.error('[instituteApi] Error parseando respuesta JSON:', parseError)
             // Asumir éxito si el status fue OK pero JSON falló
             return {
                 exitoso: true,
@@ -154,7 +155,7 @@ export async function cargarDatosMinisterio(
 
         return resultado
     } catch (error) {
-        console.error('❌ Error cargando datos ministerio:', error)
+        // console.error('[instituteApi] Error cargando datos ministerio:', error)
         return {
             exitoso: false,
             totalRecibidos: 0,
@@ -188,7 +189,7 @@ export async function cruzarDatosMinisterio(
 
         return await response.json()
     } catch (error) {
-        console.error('❌ Error cruzando datos:', error)
+        // console.error('[instituteApi] Error cruzando datos:', error)
         return {
             exitoso: false,
             coincidencias: 0,
@@ -218,7 +219,7 @@ export async function getEstudiantesPendientes(): Promise<ResultadoEstudiantes> 
 
         return await response.json()
     } catch (error) {
-        console.error('❌ Error obteniendo estudiantes pendientes:', error)
+        // console.error('[instituteApi] Error obteniendo estudiantes pendientes:', error)
         return {
             exitoso: false,
             total: 0,
@@ -248,7 +249,7 @@ export async function marcarNotificados(ruts: string[]): Promise<boolean> {
         return data.exitoso
 
     } catch (error) {
-        console.error('❌ Error marcando notificados:', error)
+        // console.error('[instituteApi] Error marcando notificados:', error)
         return false
     }
 }
@@ -314,7 +315,7 @@ export async function detectarNoPostulantes(
 
         return await response.json()
     } catch (error) {
-        console.error('❌ Error detectando no postulantes:', error)
+        // console.error('[instituteApi] Error detectando no postulantes:', error)
         return {
             exitoso: false,
             totalMatriculados: 0,
@@ -353,7 +354,7 @@ export async function getNoPostulantes(): Promise<{
 
         return await response.json()
     } catch (error) {
-        console.error('❌ Error obteniendo estudiantes FUAS:', error)
+        // console.error('[instituteApi] Error obteniendo estudiantes FUAS:', error)
         return {
             exitoso: false,
             total: 0,
@@ -385,7 +386,7 @@ export async function marcarNotificadosFUAS(ruts: string[]): Promise<boolean> {
         return data.exitoso
 
     } catch (error) {
-        console.error('❌ Error marcando notificados FUAS:', error)
+        // console.error('[instituteApi] Error marcando notificados FUAS:', error)
         return false
     }
 }
@@ -447,7 +448,7 @@ export async function cruzarBeneficios(datosPreseleccion: unknown[]): Promise<Re
             fscu: d.fscu || null
         }))
 
-        console.log(`📤 Enviando ${datosOptimizados.length} registros optimizados para cruce...`)
+        // console.log(`[instituteApi] Enviando ${datosOptimizados.length} registros optimizados para cruce...`)
 
         const response = await fetch(`${BACKEND_URL}/api/beneficios/cruzar`, {
             method: 'POST',
@@ -464,7 +465,7 @@ export async function cruzarBeneficios(datosPreseleccion: unknown[]): Promise<Re
 
         return await response.json()
     } catch (error) {
-        console.error('❌ Error cruzando beneficios:', error)
+        // console.error('[instituteApi] Error cruzando beneficios:', error)
         return {
             exito: false,
             totalPreseleccion: 0,
@@ -503,7 +504,7 @@ export async function notificarBeneficiosMasivos(
 
         return await response.json()
     } catch (error) {
-        console.error('❌ Error enviando notificaciones de beneficios:', error)
+        // console.error('[instituteApi] Error enviando notificaciones de beneficios:', error)
         return {
             exito: false,
             enviados: 0,
@@ -539,7 +540,7 @@ export async function guardarCruceBeneficios(
 
         return await response.json()
     } catch (error) {
-        console.error('❌ Error guardando cruce de beneficios:', error)
+        // console.error('[instituteApi] Error guardando cruce de beneficios:', error)
         return {
             exito: false,
             actualizados: 0,

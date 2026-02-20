@@ -1,3 +1,8 @@
+/**
+ * Página de inicio de sesión.
+ *
+ * Gestiona autenticación contra API CEDUC y recuperación de contraseña.
+ */
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../contexts/AuthContext"
@@ -119,13 +124,13 @@ export default function LoginPage() {
                     {/* Feature pills */}
                     <div className="flex flex-wrap gap-2 mt-8">
                         <span className="px-3 py-1.5 bg-white/10 backdrop-blur-sm rounded-full text-xs font-medium text-indigo-100 border border-white/10">
-                            📋 Postulación FUAS
+                            Postulación FUAS
                         </span>
                         <span className="px-3 py-1.5 bg-white/10 backdrop-blur-sm rounded-full text-xs font-medium text-indigo-100 border border-white/10">
-                            🎓 Becas y Gratuidad
+                            Becas y Gratuidad
                         </span>
                         <span className="px-3 py-1.5 bg-white/10 backdrop-blur-sm rounded-full text-xs font-medium text-indigo-100 border border-white/10">
-                            📅 Agendamiento de Citas
+                            Agendamiento de Citas
                         </span>
                     </div>
                 </div>

@@ -74,8 +74,8 @@ export function parsearCSVPostulantesFUAS(contenido: string): ResultadoParseFUAS
         }
     }
 
-    console.log('📊 CSV FUAS - Columnas:', cabecera)
-    console.log('📊 Índices: RUT=', indiceRut, 'DV=', indiceDv, 'POSTULACION=', indicePostulacion)
+    // console.log('[csvParserFUAS] Columnas:', cabecera)
+    // console.log('[csvParserFUAS] Índices: RUT=', indiceRut, 'DV=', indiceDv, 'POSTULACION=', indicePostulacion)
 
     // Procesar filas de datos
     for (let i = 1; i < lineas.length; i++) {

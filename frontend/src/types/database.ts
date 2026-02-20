@@ -1,3 +1,8 @@
+/**
+ * Tipos de dominio y contratos de datos del sistema.
+ *
+ * Este archivo concentra las interfaces usadas entre frontend y backend.
+ */
 import type { Role } from './auth'
 
 /**

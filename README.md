@@ -1,67 +1,41 @@
-# 🎓 GestorCeduc FUAS
+# GestorCeduc FUAS
 
-> Plataforma web para automatizar la gestión de postulaciones FUAS en instituciones educativas chilenas.
+Plataforma web para automatizar la gestión de postulaciones FUAS en CEDUC UCN.
 
-### Instalación
+## Documentación principal
 
-```bash
-# Clonar repositorio
-git clone https://github.com/francocerda/GestorCeduc.git
-cd GestorCeduc
+- Guía de instalación y uso empresarial: [GUIA_ENTREGA.md](GUIA_ENTREGA.md)
+- Mapa técnico por archivo: [DOCUMENTACION_ARCHIVOS.md](DOCUMENTACION_ARCHIVOS.md)
+- Guía de mantenimiento para desarrolladores: [GUIA_MANTENIMIENTO_DESARROLLADOR.md](GUIA_MANTENIMIENTO_DESARROLLADOR.md)
 
-# Backend
-cd backend
-npm install
-cp .env.example .env  # Configurar variables
-npm start
+## Arranque rápido local
 
-# Frontend (nueva terminal)
-cd frontend
-npm install
-npm run dev
-```
+1. Clonar repositorio:
+    - `git clone https://github.com/francocerda/GestorCeduc.git`
+    - `cd GestorCeduc`
+2. Configurar variables de entorno:
+    - Backend: copiar `backend/.env.example` a `backend/.env`
+    - Frontend: copiar `frontend/.env.example` a `frontend/.env.local`
+3. Instalar dependencias:
+    - `cd ../backend && npm install`
+    - `cd ../frontend && npm install`
+4. Levantar servicios:
+    - Backend: `cd backend && npm start`
+    - Frontend: `cd frontend && npm run dev`
 
-### Variables de Entorno
+## Tecnologías
 
-**Backend (`.env`)**
-```env
-SUPABASE_URL=tu_url
-SUPABASE_KEY=tu_key
-SQL_SERVER_HOST=host
-SQL_SERVER_USER=user
-SQL_SERVER_PASSWORD=pass
-```
+- Frontend: React, TypeScript, Vite, Tailwind CSS
+- Backend: Node.js, Express
+- Base de datos: PostgreSQL
+- Integraciones: SQL Server, Google Drive, Elastic Email
 
-**Frontend (`.env`)**
-```env
-VITE_SUPABASE_URL=tu_url
-VITE_SUPABASE_ANON_KEY=tu_anon_key
-```
-
----
-
-## 📁 Estructura
-
-```
-├── backend/
-│   ├── server.js          # API Express + sincronización
-│   └── .env
-│
-└── frontend/src/
-    ├── components/ui/     # Componentes reutilizables
-    ├── pages/             # Vistas principales
-    ├── hooks/             # Custom hooks
-    ├── lib/               # Servicios y utilidades
-    └── types/             # TypeScript definitions
-```
-
----
-
-## 👥 Roles
+## Roles
 
 | Rol | Acceso |
 |-----|--------|
-| Estudiante | Portal estudiante, subir documentos, agendar citas |
-| Asistente Social | Validar documentos, gestionar citas, ver métricas |
+| Estudiante | Portal estudiante, agendamiento, carga de documentos |
+| Asistente Social | Gestión FUAS, citas, validación documental |
+| Jefa DAE | Acceso administrativo completo, beneficios y reportes |
 
 

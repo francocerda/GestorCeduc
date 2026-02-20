@@ -79,7 +79,7 @@ export function StudentProfileModal({
             setPerfil(data.estudiante);
             setHistorial(data.historial_citas || []);
         } catch (err) {
-            console.error('Error cargando perfil:', err);
+            // console.error('Error cargando perfil:', err);
             setError('No se pudo cargar la información del estudiante');
         } finally {
             setLoading(false);

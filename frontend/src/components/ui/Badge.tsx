@@ -1,3 +1,8 @@
+/**
+ * Componente visual para estados y etiquetas cortas.
+ *
+ * Incluye utilidades para mapear estados de cita a variante y texto legible.
+ */
 import type { EstadoCita } from '../../types/database'
 
 interface PropiedadesEtiqueta {

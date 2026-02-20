@@ -21,9 +21,9 @@ class GoogleDriveService {
         // Cache de carpetas para no crearlas múltiples veces
         this.cacheCarpteas = new Map();
 
-        console.log('📁 GoogleDriveService inicializado');
-        console.log(`   Carpeta Estudiantes: ${this.folderEstudiantes}`);
-        console.log(`   Carpeta Asistentes: ${this.folderAsistentes}`);
+        // console.log('[Drive] GoogleDriveService inicializado');
+        // console.log(`   Carpeta Estudiantes: ${this.folderEstudiantes}`);
+        // console.log(`   Carpeta Asistentes: ${this.folderAsistentes}`);
     }
 
     /**
@@ -44,7 +44,7 @@ class GoogleDriveService {
                 return response;
             } catch (error) {
                 if (i === retries - 1) throw error;
-                console.warn(`⚠️ Error de red (${error.code}), reintentando (${i + 1}/${retries})...`);
+                // console.warn(`[Drive] Error de red (${error.code}), reintentando (${i + 1}/${retries})...`);
                 await new Promise(res => setTimeout(res, 1000 * (i + 1))); // Espera exponencial
             }
         }
@@ -55,7 +55,7 @@ class GoogleDriveService {
      */
     async renovarToken() {
         try {
-            console.log('🔄 Renovando access_token de Google Drive...');
+            // console.log('[Drive] Renovando access_token de Google Drive...');
 
             const response = await this.fetchWithRetry('https://oauth2.googleapis.com/token', {
                 method: 'POST',
@@ -77,9 +77,9 @@ class GoogleDriveService {
             this.accessToken = data.access_token;
             this.tokenExpiry = Date.now() + (data.expires_in * 1000);
 
-            console.log('✅ Token renovado exitosamente');
+            // console.log('[Drive] Token renovado exitosamente');
         } catch (error) {
-            console.error('❌ Error renovando token:', error.message);
+            // console.error('[Drive] Error renovando token:', error.message);
             throw error;
         }
     }
@@ -117,14 +117,14 @@ class GoogleDriveService {
             if (busquedaResponse.ok) {
                 const busqueda = await busquedaResponse.json();
                 if (busqueda.files && busqueda.files.length > 0) {
-                    console.log(`📂 Carpeta encontrada: ${nombreCarpeta}`);
+                    // console.log(`[Drive] Carpeta encontrada: ${nombreCarpeta}`);
                     this.cacheCarpteas.set(cacheKey, busqueda.files[0].id);
                     return busqueda.files[0].id;
                 }
             }
 
             // Si no existe, crear la carpeta
-            console.log(`📁 Creando carpeta: ${nombreCarpeta}`);
+            // console.log(`[Drive] Creando carpeta: ${nombreCarpeta}`);
 
             const crearResponse = await this.fetchWithRetry(
                 'https://www.googleapis.com/drive/v3/files',
@@ -148,12 +148,12 @@ class GoogleDriveService {
             }
 
             const nuevaCarpeta = await crearResponse.json();
-            console.log(`✅ Carpeta creada: ${nombreCarpeta} (${nuevaCarpeta.id})`);
+            // console.log(`[Drive] Carpeta creada: ${nombreCarpeta} (${nuevaCarpeta.id})`);
 
             this.cacheCarpteas.set(cacheKey, nuevaCarpeta.id);
             return nuevaCarpeta.id;
         } catch (error) {
-            console.error('❌ Error buscando/creando carpeta:', error.message);
+            // console.error('[Drive] Error buscando/creando carpeta:', error.message);
             throw error;
         }
     }
@@ -201,7 +201,7 @@ class GoogleDriveService {
             }
 
             const file = await response.json();
-            console.log(`✅ Archivo subido: ${file.name} (${file.id})`);
+            // console.log(`[Drive] Archivo subido: ${file.name} (${file.id})`);
 
             // Hacer el archivo público
             await this.hacerPublico(file.id);
@@ -214,7 +214,7 @@ class GoogleDriveService {
                 urlVer: `https://drive.google.com/file/d/${file.id}/view`
             };
         } catch (error) {
-            console.error('❌ Error subiendo archivo:', error.message);
+            // console.error('[Drive] Error subiendo archivo:', error.message);
             throw error;
         }
     }
@@ -243,12 +243,12 @@ class GoogleDriveService {
 
             if (!response.ok) {
                 const error = await response.json();
-                console.warn(`⚠️ No se pudo hacer público: ${error.error?.message}`);
+                // console.warn(`[Drive] No se pudo hacer público: ${error.error?.message}`);
             } else {
-                console.log(`🔓 Archivo ${fileId} ahora es público`);
+                // console.log(`[Drive] Archivo ${fileId} ahora es público`);
             }
         } catch (error) {
-            console.warn('⚠️ Error configurando permisos:', error.message);
+            // console.warn('[Drive] Error configurando permisos:', error.message);
         }
     }
 
@@ -287,22 +287,22 @@ class GoogleDriveService {
         const nombreAsistenteLimpio = (nombreAsistente || 'Asistente_Desconocido').trim();
         const nombreEstudianteLimpio = (nombreEstudiante || 'Estudiante_Desconocido').trim();
 
-        console.log(`📂 Procesando subida cita para: "${nombreAsistenteLimpio}" / "${nombreEstudianteLimpio}"`);
-        console.log(`   ID Carpeta Raíz Asistentes: ${this.folderAsistentes}`);
+        // console.log(`[Drive] Procesando subida cita para: "${nombreAsistenteLimpio}" / "${nombreEstudianteLimpio}"`);
+        // console.log(`   ID Carpeta Raíz Asistentes: ${this.folderAsistentes}`);
 
         // Crear/buscar carpeta del asistente
         const carpetaAsistente = await this.buscarOCrearCarpeta(
             nombreAsistenteLimpio,
             this.folderAsistentes
         );
-        console.log(`   -> ID Carpeta Asistente "${nombreAsistenteLimpio}": ${carpetaAsistente}`);
+        // console.log(`   -> ID Carpeta Asistente "${nombreAsistenteLimpio}": ${carpetaAsistente}`);
 
         // Crear/buscar subcarpeta del estudiante dentro de la del asistente
         const carpetaEstudiante = await this.buscarOCrearCarpeta(
             nombreEstudianteLimpio,
             carpetaAsistente
         );
-        console.log(`   -> ID Carpeta Estudiante "${nombreEstudianteLimpio}": ${carpetaEstudiante}`);
+        // console.log(`   -> ID Carpeta Estudiante "${nombreEstudianteLimpio}": ${carpetaEstudiante}`);
 
         // Nombre del archivo con fecha
         const fecha = new Date().toISOString().split('T')[0];

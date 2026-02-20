@@ -1,3 +1,9 @@
+/**
+ * Hook de dominio para gestión de citas.
+ *
+ * Centraliza operaciones de lectura, creación y actualización de citas
+ * junto con manejo de estado de carga y error.
+ */
 import { useState, useCallback } from 'react'
 import { api } from '../lib/api'
 import type { Cita, EstadoCita, AsistenteSocial } from '../types/database'
@@ -33,7 +39,7 @@ export function useCitas() {
         } catch (err) {
             const mensaje = err instanceof Error ? err.message : 'Error al cargar citas'
             setError(mensaje)
-            console.error('❌ Error al obtener citas:', err)
+            // console.error('[useCitas] Error al obtener citas:', err)
             return []
         } finally {
             setCargando(false)
@@ -51,7 +57,7 @@ export function useCitas() {
         } catch (err) {
             const mensaje = err instanceof Error ? err.message : 'Error al cargar citas'
             setError(mensaje)
-            console.error('❌ Error al obtener citas:', err)
+            // console.error('[useCitas] Error al obtener citas:', err)
             return []
         } finally {
             setCargando(false)
@@ -82,12 +88,12 @@ export function useCitas() {
 
         try {
             const data = await api.crearCita(datosCita)
-            console.log('✅ Cita creada:', data)
+            // console.log('[useCitas] Cita creada:', data)
             return data
         } catch (err) {
             const mensaje = err instanceof Error ? err.message : 'Error al crear cita'
             setError(mensaje)
-            console.error('❌ Error al crear cita:', err)
+            // console.error('[useCitas] Error al crear cita:', err)
             return null
         } finally {
             setCargando(false)
@@ -102,12 +108,12 @@ export function useCitas() {
         try {
             const exito = await api.updateCita(id, cambios)
             if (!exito) throw new Error('Error al actualizar')
-            console.log('✅ Cita actualizada:', id)
+            // console.log('[useCitas] Cita actualizada:', id)
             return true
         } catch (err) {
             const mensaje = err instanceof Error ? err.message : 'Error al actualizar cita'
             setError(mensaje)
-            console.error('❌ Error al actualizar cita:', err)
+            // console.error('[useCitas] Error al actualizar cita:', err)
             return false
         } finally {
             setCargando(false)
@@ -157,12 +163,12 @@ export function useCitas() {
             } as any) // Cast as any si la interfaz Cita no tiene estos campos opcionales aun
 
             if (!exito) throw new Error('Error al actualizar')
-            console.log('✅ Cita completada con documento:', id)
+            // console.log('[useCitas] Cita completada con documento:', id)
             return true
         } catch (err) {
             const mensaje = err instanceof Error ? err.message : 'Error al completar cita'
             setError(mensaje)
-            console.error('❌ Error al completar cita:', err)
+            // console.error('[useCitas] Error al completar cita:', err)
             return false
         } finally {
             setCargando(false)
@@ -179,7 +185,7 @@ export function useCitas() {
             const data = await api.getCitasRango(rutAsistente, fechaInicio, fechaFin)
             return data
         } catch (err) {
-            console.error('❌ Error al obtener citas en rango:', err)
+            // console.error('[useCitas] Error al obtener citas en rango:', err)
             return []
         }
     }, [])

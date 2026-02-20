@@ -1,3 +1,8 @@
+/**
+ * Utilidades de fecha y hora para zona horaria de Chile.
+ *
+ * Incluye conversión UTC/local, formateo y helpers de cálculo temporal.
+ */
 import { format, parseISO } from 'date-fns'
 import { toZonedTime, fromZonedTime } from 'date-fns-tz'
 import { es } from 'date-fns/locale'

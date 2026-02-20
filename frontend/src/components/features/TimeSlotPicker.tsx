@@ -1,7 +1,22 @@
+/**
+ * Componente de selección de horarios para reservar citas.
+ *
+ * Filtra conflictos con citas existentes, excluye horarios pasados
+ * y separa visualmente bloques de mañana y tarde.
+ */
 import { useMemo } from 'react'
 import { addMinutes } from '../../lib/dateUtils'
 import type { Cita, HorarioAtencion, BloqueHorario } from '../../types/database'
 
+/**
+ * Selector de horas disponibles para agendamiento de citas.
+ *
+ * Lógica principal:
+ * - Usa horario del asistente (o uno por defecto).
+ * - Genera slots de duración configurable (30 min por defecto).
+ * - Bloquea horas ocupadas o pasadas.
+ * - Permite seleccionar un bloque de inicio/fin.
+ */
 interface TimeSlotPickerProps {
     date: Date
     existingAppointments: Cita[]
@@ -39,6 +54,7 @@ export default function TimeSlotPicker({
     slotDuration = 30
 }: TimeSlotPickerProps) {
 
+    // Convierte `Date.getDay()` al formato de claves del horario guardado.
     const getDiaSemana = (fecha: Date): DiaSemana | null => {
         const dia = fecha.getDay()
         if (dia === 0 || dia === 6) return null

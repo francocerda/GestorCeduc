@@ -26,18 +26,17 @@ const upload = multer({
 });
 
 const app = express()
-const PORT = process.env.PORT
+const PORT = process.env.PORT || 3001
 
 // Middleware
 app.use(cors({
     origin: process.env.FRONTEND_URL || 'http://localhost:5173',
     credentials: true
 }))
-app.use(express.json({ limit: '50mb' }))
-app.use(express.urlencoded({ limit: '50mb', extended: true }))
+app.use(express.json({ limit: '200mb' }))
+app.use(express.urlencoded({ limit: '200mb', extended: true }))
 
 // Configuración inicial
-const port = process.env.PORT || 3001;
 const dbConfig = {
     user: process.env.DB_USER,
     host: process.env.DB_HOST,
@@ -46,7 +45,7 @@ const dbConfig = {
     port: process.env.DB_PORT,
 };
 
-console.log('🔑 [Startup] ELASTIC_EMAIL_API_KEY:', process.env.ELASTIC_EMAIL_API_KEY ? 'Cargada correctamente (Termina en ' + process.env.ELASTIC_EMAIL_API_KEY.slice(-4) + ')' : '❌ NO ENCONTRADA');
+// console.log('[Startup] ELASTIC_EMAIL_API_KEY:', process.env.ELASTIC_EMAIL_API_KEY ? 'Cargada correctamente (termina en ' + process.env.ELASTIC_EMAIL_API_KEY.slice(-4) + ')' : 'NO ENCONTRADA');
 
 // Configuración SQL Server (Legacy)
 const sqlConfig = {
@@ -67,6 +66,11 @@ const sqlConfig = {
 // HELPERS DB
 // ============================================
 
+/**
+ * Construye un `INSERT ... ON CONFLICT ... DO UPDATE` para cargas en lote.
+ *
+ * Devuelve `null` si el lote viene vacío.
+ */
 function buildUpsertQuery(table, columns, values, conflictTarget, updateColumns) {
     if (values.length === 0) return null;
     const rowPlaceholders = values.map((_, rowIndex) =>
@@ -81,17 +85,34 @@ function buildUpsertQuery(table, columns, values, conflictTarget, updateColumns)
     return { text: query, values: flatValues };
 }
 
+/**
+ * Normaliza RUT para comparaciones entre fuentes heterogéneas.
+ *
+ * Resultado: solo parte numérica sin DV.
+ * Ejemplo: 12.345.678-9 -> 12345678
+ */
 function limpiarRut(rut) {
     if (!rut) return ''
-    let val = String(rut)
-    if (val.includes('-')) val = val.split('-')[0]
-    return val.replace(/[^0-9kK]/g, '')
+    let val = String(rut).trim()
+    // Quitar puntos y espacios
+    val = val.replace(/[.\s]/g, '')
+    // Si tiene guión, tomar solo la parte antes del guión (sin DV)
+    if (val.includes('-')) {
+        val = val.split('-')[0]
+    }
+    // Dejar solo dígitos (el RUT body sin DV)
+    val = val.replace(/[^0-9]/g, '')
+    return val
 }
 
 // ============================================
 // ENDPOINTS
 // ============================================
 
+/**
+ * GET /health
+ * Endpoint de verificación rápida para monitoreo y despliegue.
+ */
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
@@ -101,18 +122,21 @@ app.get('/health', (req, res) => {
     })
 })
 
-// Sincronizar Instituto
+/**
+ * GET /api/sync-instituto
+ * Sincroniza matrícula institucional (SQL Server) hacia `datos_instituto` en PostgreSQL.
+ */
 app.get('/api/sync-instituto', async (req, res) => {
     let mssqlPool = null
     const client = await pool.connect();
 
     try {
-        console.log('Conectando a SQL Server...')
+        // console.log('Conectando a SQL Server...')
         mssqlPool = await sql.connect(sqlConfig)
         const result = await mssqlPool.request().query('exec [ESTUDIANTES_MAT] 2026')
         const estudiantes = result.recordset
 
-        console.log(`${estudiantes.length} estudiantes encontrados en SQL Server`)
+        // console.log(`${estudiantes.length} estudiantes encontrados en SQL Server`)
 
         if (estudiantes.length === 0) {
             return res.json({ exitoso: true, total: 0, mensaje: 'No se encontraron estudiantes' })
@@ -134,16 +158,20 @@ app.get('/api/sync-instituto', async (req, res) => {
                     nombreCompleto || null,
                     est.Correo || null,
                     est.nombre_carrera || null,
+                    est.CODCARR || null,
                     est.CODSEDE || null,
+                    est.JORNADA || null,
                     est.anio_ingreso || 2026,
+                    est.NIVEL || null,
+                    est.estado_academico || null,
                     new Date()
                 ]);
             }
         });
 
         const datosParaInsertar = Array.from(estudiantesMap.values());
-        console.log(`${estudiantes.length - datosParaInsertar.length} duplicados eliminados`);
-        console.log('Guardando en PostgreSQL datos_instituto...')
+        // console.log(`${estudiantes.length - datosParaInsertar.length} duplicados eliminados`);
+        // console.log('Guardando en PostgreSQL datos_instituto...')
         const BATCH_SIZE = 500
         let insertados = 0
 
@@ -153,10 +181,10 @@ app.get('/api/sync-instituto', async (req, res) => {
             const batch = datosParaInsertar.slice(i, i + BATCH_SIZE)
             const query = buildUpsertQuery(
                 'datos_instituto',
-                ['rut', 'nombre', 'correo', 'carrera', 'sede', 'anio_ingreso', 'fecha_carga'],
+                ['rut', 'nombre', 'correo', 'carrera', 'cod_carrera', 'sede', 'jornada', 'anio_ingreso', 'nivel', 'estado_academico', 'fecha_carga'],
                 batch,
                 'rut',
-                ['nombre', 'correo', 'carrera', 'sede', 'anio_ingreso', 'fecha_carga']
+                ['nombre', 'correo', 'carrera', 'cod_carrera', 'sede', 'jornada', 'anio_ingreso', 'nivel', 'estado_academico', 'fecha_carga']
             )
 
             if (query) {
@@ -175,7 +203,7 @@ app.get('/api/sync-instituto', async (req, res) => {
 
     } catch (error) {
         await client.query('ROLLBACK');
-        console.error('Error sincronización:', error)
+        // console.error('Error sincronización:', error)
         res.status(500).json({ exitoso: false, error: error.message })
     } finally {
         client.release();
@@ -183,7 +211,10 @@ app.get('/api/sync-instituto', async (req, res) => {
     }
 })
 
-// Cargar Datos Ministerio
+/**
+ * POST /api/cargar-datos-ministerio
+ * Persiste datos de acreditación/postulación provenientes de CSV ministerial.
+ */
 app.post('/api/cargar-datos-ministerio', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -199,7 +230,7 @@ app.post('/api/cargar-datos-ministerio', async (req, res) => {
             d.cargado_por || null
         ]).filter(row => row[0]);
 
-        console.log(`Cargando ${datosParaInsertar.length} registros ministerio...`)
+        // console.log(`Cargando ${datosParaInsertar.length} registros ministerio...`)
 
         await client.query('BEGIN');
 
@@ -225,21 +256,24 @@ app.post('/api/cargar-datos-ministerio', async (req, res) => {
         })
     } catch (error) {
         await client.query('ROLLBACK');
-        console.error('Error carga ministerio:', error)
+        // console.error('Error carga ministerio:', error)
         res.status(500).json({ exitoso: false, error: error.message })
     } finally {
         client.release();
     }
 })
 
-// Cruzar Datos
+/**
+ * POST /api/cruzar-datos
+ * Cruza datos ministeriales con matrícula institucional y marca estudiantes `debe_acreditar`.
+ */
 app.post('/api/cruzar-datos', async (req, res) => {
     const client = await pool.connect();
     try {
         const { datos_ministerio } = req.body
         if (!datos_ministerio?.length) return res.status(400).json({ error: 'Datos requeridos' })
 
-        console.log('Obteniendo datos instituto...')
+        // console.log('Obteniendo datos instituto...')
         const { rows: estudiantesInst } = await client.query('SELECT * FROM datos_instituto');
 
         const mapaInstituto = new Map(estudiantesInst.map(e => [e.rut, e]));
@@ -264,7 +298,7 @@ app.post('/api/cruzar-datos', async (req, res) => {
             }
         });
 
-        console.log(`Guardando ${estudiantesFUAS.length} cruces en gestion_fuas...`)
+        // console.log(`Guardando ${estudiantesFUAS.length} cruces en gestion_fuas...`)
 
         await client.query('BEGIN');
 
@@ -301,14 +335,17 @@ app.post('/api/cruzar-datos', async (req, res) => {
 
     } catch (error) {
         await client.query('ROLLBACK');
-        console.error('Error crossing data:', error)
+        // console.error('Error crossing data:', error)
         res.status(500).json({ exitoso: false, error: error.message })
     } finally {
         client.release();
     }
 })
 
-// Listar Pendientes
+/**
+ * GET /api/estudiantes-pendientes
+ * Lista estudiantes con gestión FUAS activa pendiente de acción.
+ */
 app.get('/api/estudiantes-pendientes', async (req, res) => {
     try {
         const result = await pool.query(`
@@ -322,7 +359,10 @@ app.get('/api/estudiantes-pendientes', async (req, res) => {
     }
 })
 
-// Detectar No Postulantes
+/**
+ * POST /api/detectar-no-postulantes
+ * Clasifica matrícula en `postulo` y `no_postulo` según padrón FUAS cargado.
+ */
 app.post('/api/detectar-no-postulantes', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -331,6 +371,8 @@ app.post('/api/detectar-no-postulantes', async (req, res) => {
 
         const setPostulantes = new Set(ruts_postulantes.map(limpiarRut));
         const { rows: todos } = await client.query('SELECT * FROM datos_instituto');
+        
+        // Separar matriculados que NO postularon (incluir TODOS los campos del instituto)
         const noPostularon = todos
             .filter(e => !setPostulantes.has(e.rut))
             .map(e => [
@@ -338,36 +380,72 @@ app.post('/api/detectar-no-postulantes', async (req, res) => {
                 e.nombre || '',
                 e.correo || '',
                 e.carrera,
+                e.cod_carrera,
                 e.sede,
+                e.jornada,
+                e.anio_ingreso,
+                e.nivel,
+                e.estado_academico,
                 'fuas_nacional',
                 'no_postulo',
                 false,
                 new Date()
             ]);
 
-        console.log(`Guardando ${noPostularon.length} no postulantes...`)
+        // Separar matriculados que SÍ postularon (incluir TODOS los campos del instituto)
+        const siPostularon = todos
+            .filter(e => setPostulantes.has(e.rut))
+            .map(e => [
+                e.rut,
+                e.nombre || '',
+                e.correo || '',
+                e.carrera,
+                e.cod_carrera,
+                e.sede,
+                e.jornada,
+                e.anio_ingreso,
+                e.nivel,
+                e.estado_academico,
+                'fuas_nacional',
+                'postulo',
+                false,
+                new Date()
+            ]);
+
+        // console.log(`Guardando ${noPostularon.length} no postulantes y ${siPostularon.length} que sí postularon...`)
 
         await client.query('BEGIN');
 
         const BATCH_SIZE = 500
+        const columnas = ['rut', 'nombre', 'correo', 'carrera', 'cod_carrera', 'sede', 'jornada', 'anio_ingreso', 'nivel', 'estado_academico', 'origen', 'estado', 'notificacion_enviada', 'fecha_cruce'];
+        const columnasUpdate = ['nombre', 'correo', 'carrera', 'cod_carrera', 'sede', 'jornada', 'anio_ingreso', 'nivel', 'estado_academico', 'origen', 'estado', 'notificacion_enviada', 'fecha_cruce'];
+        
+        // Guardar NO postulantes
         for (let i = 0; i < noPostularon.length; i += BATCH_SIZE) {
             const batch = noPostularon.slice(i, i + BATCH_SIZE)
-            const query = buildUpsertQuery(
-                'gestion_fuas',
-                ['rut', 'nombre', 'correo', 'carrera', 'sede', 'origen', 'estado', 'notificacion_enviada', 'fecha_cruce'],
-                batch,
-                'rut',
-                ['nombre', 'correo', 'carrera', 'sede', 'origen', 'estado', 'notificacion_enviada', 'fecha_cruce']
-            );
+            const query = buildUpsertQuery('gestion_fuas', columnas, batch, 'rut', columnasUpdate);
+            if (query) await client.query(query.text, query.values)
+        }
+        
+        // Guardar SÍ postulantes
+        for (let i = 0; i < siPostularon.length; i += BATCH_SIZE) {
+            const batch = siPostularon.slice(i, i + BATCH_SIZE)
+            const query = buildUpsertQuery('gestion_fuas', columnas, batch, 'rut', columnasUpdate);
             if (query) await client.query(query.text, query.values)
         }
 
         await client.query('COMMIT');
 
-        // Obtener los estudiantes con datos completos para la respuesta
-        const { rows: estudiantesCompletos } = await client.query(
-            `SELECT rut, nombre, correo, carrera, sede, estado, documento_url, notificacion_enviada 
+        // Obtener los estudiantes NO postulantes con datos completos
+        const { rows: estudiantesNoPostularon } = await client.query(
+            `SELECT rut, nombre, correo, carrera, cod_carrera, sede, jornada, anio_ingreso, nivel, estado_academico, estado, documento_url, notificacion_enviada 
              FROM gestion_fuas WHERE estado = 'no_postulo' ORDER BY nombre`
+        );
+
+        // Obtener los estudiantes que SÍ postularon con datos completos
+        const { rows: estudiantesSiPostularon } = await client.query(
+            `SELECT rut, nombre, correo, carrera, cod_carrera, sede, jornada, anio_ingreso, nivel, estado_academico, estado, documento_url, notificacion_enviada 
+             FROM gestion_fuas WHERE estado = 'postulo' ORDER BY nombre`
         );
 
         const totalPostulantes = setPostulantes.size;
@@ -377,37 +455,61 @@ app.post('/api/detectar-no-postulantes', async (req, res) => {
             totalMatriculados: todos.length,
             totalPostulantes: totalPostulantes,
             noPostularon: noPostularon.length,
-            mensaje: `Detección completada: ${noPostularon.length} estudiantes no postularon`,
-            estudiantes: estudiantesCompletos
+            siPostularon: siPostularon.length,
+            mensaje: `Detección completada: ${siPostularon.length} postularon, ${noPostularon.length} no postularon`,
+            estudiantes: estudiantesNoPostularon,
+            estudiantesPostularon: estudiantesSiPostularon
         })
 
     } catch (error) {
         await client.query('ROLLBACK');
-        console.error('Error no postulantes:', error)
+        // console.error('Error no postulantes:', error)
         res.status(500).json({ exitoso: false, error: error.message })
     } finally {
         client.release();
     }
 })
 
-// Listar No Postulantes y estudiantes con documentos pendientes
+/**
+ * GET /api/no-postulantes
+ * Retorna consolidado FUAS para seguimiento operativo de postulantes/no postulantes.
+ */
 app.get('/api/no-postulantes', async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT * FROM gestion_fuas 
             WHERE origen = 'fuas_nacional' 
-               OR estado IN ('documento_pendiente', 'documento_validado', 'documento_rechazado')
+               OR estado IN ('postulo', 'no_postulo', 'documento_pendiente', 'documento_validado', 'documento_rechazado')
             ORDER BY 
-                CASE WHEN estado = 'documento_pendiente' THEN 0 ELSE 1 END,
+                CASE estado
+                    WHEN 'documento_pendiente' THEN 0
+                    WHEN 'no_postulo' THEN 1
+                    WHEN 'postulo' THEN 2
+                    ELSE 3
+                END,
                 nombre ASC
         `);
-        res.json({ exitoso: true, total: result.rows.length, estudiantes: result.rows })
+        
+        // Separar para respuesta detallada
+        const postularon = result.rows.filter(e => e.estado === 'postulo')
+        const noPostularon = result.rows.filter(e => e.estado !== 'postulo')
+        
+        res.json({ 
+            exitoso: true, 
+            total: result.rows.length, 
+            estudiantes: result.rows,
+            totalPostularon: postularon.length,
+            totalNoPostularon: noPostularon.length
+        })
     } catch (error) {
         res.status(500).json({ error: error.message })
     }
 })
 
-// Marcar Notificado
+/**
+ * POST /api/marcar-notificado
+ * Marca en bloque estudiantes notificados (flujo de acreditación).
+ */
 app.post('/api/marcar-notificado', async (req, res) => {
     try {
         const { ruts } = req.body
@@ -422,6 +524,10 @@ app.post('/api/marcar-notificado', async (req, res) => {
     }
 })
 
+/**
+ * POST /api/marcar-notificado-fuas
+ * Marca en bloque estudiantes notificados (flujo FUAS nacional).
+ */
 app.post('/api/marcar-notificado-fuas', async (req, res) => {
     try {
         const { ruts } = req.body
@@ -523,7 +629,7 @@ app.get('/api/estudiantes/directorio', async (req, res) => {
             offset: parseInt(offset)
         })
     } catch (err) {
-        console.error('Error en directorio:', err)
+        // console.error('Error en directorio:', err)
         res.status(500).json({ error: err.message })
     }
 })
@@ -533,13 +639,29 @@ app.get('/api/estudiantes/:rut/perfil', async (req, res) => {
     try {
         const { rut } = req.params
 
-        // Datos del estudiante
+        // Datos del estudiante con información del instituto
         const estudianteQuery = await pool.query(`
             SELECT 
-                g.*,
-                di.carrera as carrera_instituto,
-                di.sede as sede_instituto,
-                di.anio_ingreso as anio_ingreso_instituto
+                g.rut,
+                g.nombre,
+                g.correo,
+                g.carrera,
+                g.sede,
+                g.anio_ingreso,
+                g.estado as estado_fuas,
+                g.tipo_beneficio,
+                g.origen,
+                g.documento_url,
+                g.notificacion_enviada,
+                g.creado_en,
+                g.actualizado_en,
+                COALESCE(di.cod_carrera, g.cod_carrera) as cod_carrera,
+                COALESCE(di.jornada, g.jornada) as jornada,
+                COALESCE(di.nivel, g.nivel) as nivel,
+                COALESCE(di.estado_academico, g.estado_academico) as estado_academico,
+                COALESCE(di.carrera, g.carrera) as carrera_instituto,
+                COALESCE(di.sede, g.sede) as sede_instituto,
+                COALESCE(di.anio_ingreso, g.anio_ingreso) as anio_ingreso_instituto
             FROM gestion_fuas g
             LEFT JOIN datos_instituto di ON g.rut = di.rut
             WHERE g.rut = $1
@@ -547,6 +669,28 @@ app.get('/api/estudiantes/:rut/perfil', async (req, res) => {
 
         if (estudianteQuery.rows.length === 0) {
             return res.status(404).json({ error: 'Estudiante no encontrado' })
+        }
+
+        const est = estudianteQuery.rows[0]
+        
+        // Formatear respuesta para el frontend
+        const estudiante = {
+            rut: est.rut,
+            nombre: est.nombre,
+            correo: est.correo,
+            telefono: null, // No tenemos este campo aún
+            sede: est.sede,
+            carrera: est.carrera,
+            cod_carrera: est.cod_carrera,
+            jornada: est.jornada === 'D' ? 'Diurno' : est.jornada === 'V' ? 'Vespertino' : est.jornada,
+            anno_ingreso: est.anio_ingreso_instituto || est.anio_ingreso,
+            nivel_actual: est.nivel,
+            estado_matricula: est.estado_academico,
+            estado_fuas: est.estado_fuas,
+            tipo_beneficio: est.tipo_beneficio,
+            debe_postular: ['debe_acreditar', 'no_postulo'].includes(est.estado_fuas),
+            creado_en: est.creado_en,
+            actualizado_en: est.actualizado_en
         }
 
         // Historial de citas
@@ -569,11 +713,11 @@ app.get('/api/estudiantes/:rut/perfil', async (req, res) => {
         `, [rut])
 
         res.json({
-            estudiante: estudianteQuery.rows[0],
+            estudiante,
             historial_citas: citasQuery.rows
         })
     } catch (err) {
-        console.error('Error obteniendo perfil:', err)
+        // console.error('Error obteniendo perfil:', err)
         res.status(500).json({ error: err.message })
     }
 })
@@ -594,6 +738,10 @@ app.get('/api/estudiantes/:rut', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 });
 
+/**
+ * GET /api/gestion-fuas/:rut
+ * Retorna estado FUAS resumido para portal estudiante.
+ */
 app.get('/api/gestion-fuas/:rut', async (req, res) => {
     try {
         const { rut } = req.params;
@@ -602,6 +750,10 @@ app.get('/api/gestion-fuas/:rut', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 });
 
+/**
+ * POST /api/gestion-fuas/:rut/documento
+ * Actualiza URL de comprobante y cambia estado a `documento_pendiente`.
+ */
 app.post('/api/gestion-fuas/:rut/documento', async (req, res) => {
     try {
         const { rut } = req.params;
@@ -623,7 +775,10 @@ app.post('/api/gestion-fuas/:rut/documento', async (req, res) => {
 
 // ========== ENDPOINT DE SUBIDA A GOOGLE DRIVE ==========
 
-// Subir documento de estudiante FUAS (PDF)
+/**
+ * POST /api/documentos/estudiante/:rut
+ * Carga comprobante PDF a Google Drive y actualiza estado documental del estudiante.
+ */
 app.post('/api/documentos/estudiante/:rut', upload.single('archivo'), async (req, res) => {
     try {
         const { rut } = req.params;
@@ -632,7 +787,7 @@ app.post('/api/documentos/estudiante/:rut', upload.single('archivo'), async (req
             return res.status(400).json({ error: 'No se recibió archivo' });
         }
 
-        console.log(`📤 Subiendo documento para estudiante ${rut}...`);
+        // console.log(`[Documentos] Subiendo documento para estudiante ${rut}...`);
 
         // Subir a Google Drive
         // Obtener nombre del estudiante de la DB
@@ -656,7 +811,7 @@ app.post('/api/documentos/estudiante/:rut', upload.single('archivo'), async (req
             [resultado.url, rut]
         );
 
-        console.log(`✅ Documento subido para ${nombreEstudiante || rut}: ${resultado.url}`);
+        // console.log(`[Documentos] Documento subido para ${nombreEstudiante || rut}: ${resultado.url}`);
 
         res.json({
             exitoso: true,
@@ -665,12 +820,15 @@ app.post('/api/documentos/estudiante/:rut', upload.single('archivo'), async (req
             id: resultado.id
         });
     } catch (err) {
-        console.error('❌ Error subiendo documento:', err);
+        // console.error('[Documentos] Error subiendo documento:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
-// Subir documento de cita (asistente social)
+/**
+ * POST /api/citas/:id/documento
+ * Carga documento de cierre de cita a Google Drive y vincula URL a la cita.
+ */
 app.post('/api/citas/:id/documento', upload.single('archivo'), async (req, res) => {
     try {
         const { id } = req.params;
@@ -698,8 +856,8 @@ app.post('/api/citas/:id/documento', upload.single('archivo'), async (req, res) 
 
         const { nombre_estudiante, nombre_asistente } = rows[0];
 
-        console.log(`📤 Subiendo documento para cita ${id}...`);
-        console.log(`   Asistente: ${nombre_asistente}, Estudiante: ${nombre_estudiante}`);
+        // console.log(`[Documentos] Subiendo documento para cita ${id}...`);
+        // console.log(`   Asistente: ${nombre_asistente}, Estudiante: ${nombre_estudiante}`);
 
         // Subir a Google Drive (crea estructura carpetas: Asistente/Estudiante/archivo.pdf)
         const resultado = await driveService.subirDocumentoCita(
@@ -715,7 +873,7 @@ app.post('/api/citas/:id/documento', upload.single('archivo'), async (req, res) 
             [resultado.url, id]
         );
 
-        console.log(`✅ Documento de cita subido: ${resultado.url}`);
+        // console.log(`[Documentos] Documento de cita subido: ${resultado.url}`);
 
         res.json({
             exitoso: true,
@@ -724,11 +882,15 @@ app.post('/api/citas/:id/documento', upload.single('archivo'), async (req, res) 
             id: resultado.id
         });
     } catch (err) {
-        console.error('❌ Error subiendo documento cita:', err);
+        // console.error('[Documentos] Error subiendo documento cita:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
+/**
+ * GET /api/citas/estudiante/:rut
+ * Lista historial de citas del estudiante con datos básicos del asistente.
+ */
 app.get('/api/citas/estudiante/:rut', async (req, res) => {
     try {
         const { rut } = req.params;
@@ -745,6 +907,10 @@ app.get('/api/citas/estudiante/:rut', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 });
 
+/**
+ * PUT /api/citas/:id/cancelar
+ * Cancela cita y dispara notificación por correo cuando existe email del estudiante.
+ */
 app.put('/api/citas/:id/cancelar', async (req, res) => {
     try {
         const { id } = req.params;
@@ -762,7 +928,7 @@ app.put('/api/citas/:id/cancelar', async (req, res) => {
         `;
         const { rows: info } = await pool.query(queryInfo, [id]);
 
-        console.log('🔍 [Debug] Datos recuperados para cancelación:', info.length > 0 ? info[0] : 'Ninguno');
+        // console.log('[Citas] Datos recuperados para cancelación:', info.length > 0 ? info[0] : 'Ninguno');
 
         if (info.length === 0) return res.status(404).json({ error: 'Cita no encontrada' });
 
@@ -776,23 +942,28 @@ app.put('/api/citas/:id/cancelar', async (req, res) => {
 
         // 3. Enviar correo de notificación
         if (cita.correo) {
-            console.log(`📧 [Debug] Iniciando envío de correo a ${cita.correo}`);
+            // console.log(`[Email] Iniciando envío de correo a ${cita.correo}`);
             const emailService = require('./services/emailService');
             emailService.sendCancellationEmail(
                 cita.correo,
                 cita.nombre || 'Estudiante',
                 cita.inicio,
                 motivo
-            ).catch(err => console.error('Error enviando correo:', err));
+            ).catch(err => {
+                // console.error('Error enviando correo:', err);
+            });
         } else {
-            console.warn('⚠️ [Debug] No se puede enviar correo: Estudiante sin email o no encontrado');
+            // console.warn('[Email] No se puede enviar correo: estudiante sin email o no encontrado');
         }
 
         res.json(true);
     } catch (err) { res.status(500).json({ error: err.message }) }
 });
 
-// Verificar si estudiante tiene cita activa esta semana
+/**
+ * GET /api/citas/verificar-semana/:rut
+ * Regla de negocio: máximo una cita activa por semana para cada estudiante.
+ */
 app.get('/api/citas/verificar-semana/:rut', async (req, res) => {
     try {
         const { rut } = req.params;
@@ -822,7 +993,10 @@ app.get('/api/citas/verificar-semana/:rut', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 });
 
-// Validar o rechazar documento de estudiante
+/**
+ * PUT /api/gestion-fuas/:rut/validar
+ * Aprueba o rechaza comprobante FUAS y registra comentario de rechazo cuando aplica.
+ */
 app.put('/api/gestion-fuas/:rut/validar', async (req, res) => {
     try {
         const { rut } = req.params;
@@ -864,7 +1038,7 @@ app.post('/api/auth/sync-asistente', async (req, res) => {
                  WHERE rut = $1`,
                 [rut, correo, nombre, JSON.stringify(roles)]
             );
-            console.log(`✅ Asistente Social actualizado: ${rut}`);
+            // console.log(`[Auth Sync] Asistente social actualizado: ${rut}`);
         } else {
             // Crear nuevo con horario por defecto
             const horarioDefecto = {
@@ -880,12 +1054,12 @@ app.post('/api/auth/sync-asistente', async (req, res) => {
                  VALUES ($1, $2, $3, $4, $5, true)`,
                 [rut, correo, nombre, JSON.stringify(roles), JSON.stringify(horarioDefecto)]
             );
-            console.log(`✅ Asistente Social creado: ${rut}`);
+            // console.log(`[Auth Sync] Asistente social creado: ${rut}`);
         }
 
         res.json({ exitoso: true });
     } catch (err) {
-        console.error('Error sync asistente:', err);
+        // console.error('Error sync asistente:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -907,7 +1081,7 @@ app.post('/api/auth/sync-estudiante', async (req, res) => {
                  WHERE rut = $1`,
                 [rut, correo, nombre, JSON.stringify(roles)]
             );
-            console.log(`✅ Estudiante actualizado: ${rut}`);
+            // console.log(`[Auth Sync] Estudiante actualizado: ${rut}`);
         } else {
             // Crear nuevo con estado 'sin_pendientes'
             await pool.query(
@@ -915,7 +1089,7 @@ app.post('/api/auth/sync-estudiante', async (req, res) => {
                  VALUES ($1, $2, $3, $4, 'sin_pendientes', NOW(), NOW())`,
                 [rut, correo, nombre, JSON.stringify(roles)]
             );
-            console.log(`✅ Estudiante creado: ${rut}`);
+            // console.log(`[Auth Sync] Estudiante creado: ${rut}`);
         }
 
         // Obtener estado FUAS completo
@@ -931,7 +1105,7 @@ app.post('/api/auth/sync-estudiante', async (req, res) => {
             estadoFuas
         });
     } catch (err) {
-        console.error('Error sync estudiante:', err);
+        // console.error('Error sync estudiante:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -952,7 +1126,7 @@ app.post('/api/email/notificacion-fuas', async (req, res) => {
         const resultado = await emailService.enviarNotificacionFUAS(estudiante);
         res.json(resultado);
     } catch (err) {
-        console.error('Error enviando notificación FUAS:', err);
+        // console.error('Error enviando notificación FUAS:', err);
         res.status(500).json({ exito: false, mensaje: err.message });
     }
 });
@@ -964,11 +1138,11 @@ app.post('/api/email/notificaciones-masivas', async (req, res) => {
         if (!estudiantes || !Array.isArray(estudiantes) || estudiantes.length === 0) {
             return res.status(400).json({ exitosos: 0, fallidos: 0, mensaje: 'Lista de estudiantes requerida' });
         }
-        console.log(`📬 Recibida solicitud para enviar ${estudiantes.length} notificaciones...`);
+        // console.log(`[Email] Recibida solicitud para enviar ${estudiantes.length} notificaciones...`);
         const resultado = await emailService.enviarNotificacionesMasivas(estudiantes);
         res.json(resultado);
     } catch (err) {
-        console.error('Error enviando notificaciones masivas:', err);
+        // console.error('Error enviando notificaciones masivas:', err);
         res.status(500).json({ exitosos: 0, fallidos: 0, mensaje: err.message });
     }
 });
@@ -983,7 +1157,7 @@ app.post('/api/email/recordatorio-fuas', async (req, res) => {
         const resultado = await emailService.enviarRecordatorioFUAS(estudiante);
         res.json(resultado);
     } catch (err) {
-        console.error('Error enviando recordatorio FUAS:', err);
+        // console.error('Error enviando recordatorio FUAS:', err);
         res.status(500).json({ exito: false, mensaje: err.message });
     }
 });
@@ -995,11 +1169,11 @@ app.post('/api/email/recordatorios-masivos', async (req, res) => {
         if (!estudiantes || !Array.isArray(estudiantes) || estudiantes.length === 0) {
             return res.status(400).json({ exitosos: 0, fallidos: 0, mensaje: 'Lista de estudiantes requerida' });
         }
-        console.log(`📬 Recibida solicitud para enviar ${estudiantes.length} recordatorios...`);
+        // console.log(`[Email] Recibida solicitud para enviar ${estudiantes.length} recordatorios...`);
         const resultado = await emailService.enviarRecordatoriosMasivosFUAS(estudiantes);
         res.json(resultado);
     } catch (err) {
-        console.error('Error enviando recordatorios masivos:', err);
+        // console.error('Error enviando recordatorios masivos:', err);
         res.status(500).json({ exitosos: 0, fallidos: 0, mensaje: err.message });
     }
 });
@@ -1042,12 +1216,12 @@ app.post('/api/email/solicitar-reunion', async (req, res) => {
 
         if (resultado.exito) {
             // Registrar en log (opcional)
-            console.log(`📧 Solicitud de reunión enviada: ${asistente.nombre} -> ${estudiante.correo} (${motivo})`);
+            // console.log(`[Email] Solicitud de reunión enviada: ${asistente.nombre} -> ${estudiante.correo} (${motivo})`);
         }
 
         res.json(resultado);
     } catch (err) {
-        console.error('Error enviando solicitud de reunión:', err);
+        // console.error('Error enviando solicitud de reunión:', err);
         res.status(500).json({ exito: false, mensaje: err.message });
     }
 });
@@ -1068,31 +1242,57 @@ app.post('/api/beneficios/cruzar', async (req, res) => {
             return res.status(400).json({ error: 'Se requiere array de estudiantes' });
         }
 
-        console.log(`🔄 Cruzando ${datosPreseleccion.length} registros de preselección con estudiantes matriculados...`);
+        // console.log(`[Beneficios] Cruzando ${datosPreseleccion.length} registros de preselección con estudiantes matriculados...`);
 
-        // Obtener todos los estudiantes matriculados de la institución
-        const { rows: matriculados } = await pool.query(`
-            SELECT rut, nombre, correo, sede, carrera, estado_matricula
+        // Obtener todos los estudiantes matriculados de datos_instituto (SQL Server sync)
+        // Esta tabla tiene TODOS los matriculados, gestion_fuas solo tiene los que ya pasaron por algún proceso
+        const { rows: matriculadosInstituto } = await pool.query(`
+            SELECT rut, nombre, correo, carrera, sede
+            FROM datos_instituto
+            WHERE correo IS NOT NULL AND correo != ''
+        `);
+
+        // También obtener los que están en gestion_fuas (pueden tener datos actualizados)
+        const { rows: matriculadosFUAS } = await pool.query(`
+            SELECT rut, nombre, correo, carrera, sede
             FROM gestion_fuas
             WHERE correo IS NOT NULL AND correo != ''
         `);
 
-        console.log(`📊 Estudiantes matriculados con correo: ${matriculados.length}`);
+        // console.log(`[Beneficios] Estudiantes en datos_instituto con correo: ${matriculadosInstituto.length}`);
+        // console.log(`[Beneficios] Estudiantes en gestion_fuas con correo: ${matriculadosFUAS.length}`);
 
-        // Crear mapa de RUTs matriculados para búsqueda rápida
+        // Crear mapa unificado - priorizar datos_instituto (más completo), luego gestion_fuas
         const matriculadosMap = new Map();
-        for (const est of matriculados) {
+        for (const est of matriculadosInstituto) {
             const rutLimpio = limpiarRut(est.rut);
-            matriculadosMap.set(rutLimpio, est);
+            if (rutLimpio) matriculadosMap.set(rutLimpio, est);
         }
+        // Agregar/actualizar con datos de gestion_fuas (tiene correo actualizado por login)
+        for (const est of matriculadosFUAS) {
+            const rutLimpio = limpiarRut(est.rut);
+            if (rutLimpio && !matriculadosMap.has(rutLimpio)) {
+                matriculadosMap.set(rutLimpio, est);
+            }
+        }
+
+        // Debug: mostrar muestras de RUTs de ambos lados
+        const rutsDB = Array.from(matriculadosMap.keys()).slice(0, 5);
+        const rutsCSV = datosPreseleccion.slice(0, 5).map(p => ({ original: p.rut, limpio: limpiarRut(p.rut) }));
+        // console.log('[Beneficios] Muestra RUTs en BD (gestion_fuas):', rutsDB);
+        // console.log('[Beneficios] Muestra RUTs del CSV preselección:', rutsCSV);
+        // console.log('[Beneficios] Total RUTs en mapa BD:', matriculadosMap.size);
+        // console.log('[Beneficios] Total registros CSV preselección:', datosPreseleccion.length);
 
         // Cruzar datos
         const estudiantesCruzados = [];
         let sinBeneficios = 0;
+        let coincidenciasRut = 0;
 
         for (const presel of datosPreseleccion) {
             const rutLimpio = limpiarRut(presel.rut);
             const matriculado = matriculadosMap.get(rutLimpio);
+            if (matriculado) coincidenciasRut++;
 
             if (matriculado) {
                 // Construir lista de beneficios
@@ -1123,18 +1323,19 @@ app.post('/api/beneficios/cruzar', async (req, res) => {
             }
         }
 
-        console.log(`✅ Cruce completado: ${estudiantesCruzados.length} estudiantes con beneficios encontrados`);
+        // console.log(`[Beneficios] Coincidencias de RUT encontradas: ${coincidenciasRut}`);
+        // console.log(`[Beneficios] Cruce completado: ${estudiantesCruzados.length} estudiantes con beneficios encontrados`);
 
         res.json({
             exito: true,
             totalPreseleccion: datosPreseleccion.length,
-            totalMatriculados: matriculados.length,
+            totalMatriculados: matriculadosMap.size,
             estudiantesConBeneficios: estudiantesCruzados.length,
             sinBeneficios,
             estudiantes: estudiantesCruzados
         });
     } catch (err) {
-        console.error('Error en cruce de beneficios:', err);
+        // console.error('Error en cruce de beneficios:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -1151,12 +1352,12 @@ app.post('/api/beneficios/notificar', async (req, res) => {
             return res.status(400).json({ error: 'Se requiere array de estudiantes con beneficios' });
         }
 
-        console.log(`📧 Enviando notificaciones de beneficios a ${estudiantes.length} estudiantes...`);
+        // console.log(`[Email] Enviando notificaciones de beneficios a ${estudiantes.length} estudiantes...`);
 
         const emailService = require('./services/emailService');
         const resultado = await emailService.enviarNotificacionesBeneficiosMasivas(estudiantes, anoProceso);
 
-        console.log(`✅ Notificaciones enviadas: ${resultado.exitosos} exitosos, ${resultado.fallidos} fallidos`);
+        // console.log(`[Email] Notificaciones enviadas: ${resultado.exitosos} exitosos, ${resultado.fallidos} fallidos`);
 
         res.json({
             exito: true,
@@ -1165,7 +1366,7 @@ app.post('/api/beneficios/notificar', async (req, res) => {
             errores: resultado.errores
         });
     } catch (err) {
-        console.error('Error enviando notificaciones de beneficios:', err);
+        // console.error('Error enviando notificaciones de beneficios:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -1195,7 +1396,7 @@ app.post('/api/beneficios/guardar-cruce', async (req, res) => {
             if (rowCount > 0) actualizados++;
         }
 
-        console.log(`💾 Cruce guardado: ${actualizados} estudiantes actualizados`);
+        // console.log(`[Beneficios] Cruce guardado: ${actualizados} estudiantes actualizados`);
 
         res.json({
             exito: true,
@@ -1203,18 +1404,18 @@ app.post('/api/beneficios/guardar-cruce', async (req, res) => {
             mensaje: `Se actualizaron ${actualizados} registros con información de beneficios`
         });
     } catch (err) {
-        console.error('Error guardando cruce de beneficios:', err);
+        // console.error('Error guardando cruce de beneficios:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
 app.listen(PORT, () => {
-    console.log(`
- Backend GestorCeduc migrado a PostgreSQL
- Puerto: ${PORT}
- URL: http://localhost:${PORT}
- DB: ${process.env.PG_DATABASE}@${process.env.PG_HOST}
-    `)
+    // console.log(`
+    //  Backend GestorCeduc migrado a PostgreSQL
+    //  Puerto: ${PORT}
+    //  URL: http://localhost:${PORT}
+    //  DB: ${process.env.PG_DATABASE}@${process.env.PG_HOST}
+    //     `)
 })
 
 module.exports = app
@@ -1223,8 +1424,12 @@ module.exports = app
 // ENDPOINTS GESTION ESTUDIANTES (useStudents)
 // ============================================
 
-// Listar estudiantes con filtros
-// Si se filtra por debe_postular o estado_fuas, consulta gestion_fuas
+/**
+ * GET /api/estudiantes
+ * Listado administrativo con filtros.
+ * - Si hay filtros FUAS, consulta `gestion_fuas`.
+ * - En caso contrario, consulta `estudiantes`.
+ */
 app.get('/api/estudiantes', async (req, res) => {
     try {
         const { busqueda, debe_postular, estado_fuas, limit, offset } = req.query
@@ -1298,7 +1503,10 @@ app.get('/api/estudiantes', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// Contar estudiantes pendientes (usa gestion_fuas)
+/**
+ * GET /api/estudiantes/count/pendientes
+ * Retorna total de estudiantes con acciones FUAS pendientes.
+ */
 app.get('/api/estudiantes/count/pendientes', async (req, res) => {
     try {
         const { rows } = await pool.query(`
@@ -1309,7 +1517,10 @@ app.get('/api/estudiantes/count/pendientes', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// Actualizar estudiante
+/**
+ * PUT /api/estudiantes/:rut
+ * Actualiza campos dinámicos de un estudiante.
+ */
 app.put('/api/estudiantes/:rut', async (req, res) => {
     try {
         const { rut } = req.params
@@ -1332,7 +1543,10 @@ app.put('/api/estudiantes/:rut', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// Marcar notificados masivo (tabla gestion_fuas - los campos de notificación están ahí)
+/**
+ * POST /api/estudiantes/notificar
+ * Marca en bloque notificación enviada para estudiantes FUAS.
+ */
 app.post('/api/estudiantes/notificar', async (req, res) => {
     try {
         const { ruts } = req.body
@@ -1351,6 +1565,10 @@ app.post('/api/estudiantes/notificar', async (req, res) => {
 // ENDPOINTS ASISTENTES (useAsistentesSociales)
 // ============================================
 
+/**
+ * GET /api/asistentes-sociales
+ * Lista asistentes activos disponibles para agenda.
+ */
 app.get('/api/asistentes-sociales', async (req, res) => {
     try {
         const { rows } = await pool.query('SELECT * FROM asistentes_sociales WHERE activo = true ORDER BY nombre ASC')
@@ -1358,7 +1576,10 @@ app.get('/api/asistentes-sociales', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// Obtener asistente por RUT
+/**
+ * GET /api/asistentes/:rut
+ * Obtiene ficha base de asistente social.
+ */
 app.get('/api/asistentes/:rut', async (req, res) => {
     try {
         const { rut } = req.params
@@ -1370,7 +1591,10 @@ app.get('/api/asistentes/:rut', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// Obtener horario de un asistente
+/**
+ * GET /api/asistentes/:rut/horario
+ * Retorna horario de atención y sede del asistente.
+ */
 app.get('/api/asistentes/:rut/horario', async (req, res) => {
     try {
         const { rut } = req.params
@@ -1385,7 +1609,10 @@ app.get('/api/asistentes/:rut/horario', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// Actualizar horario de un asistente
+/**
+ * PUT /api/asistentes/:rut/horario
+ * Valida y persiste horario semanal en formato JSON.
+ */
 app.put('/api/asistentes/:rut/horario', async (req, res) => {
     try {
         const { rut } = req.params
@@ -1422,15 +1649,18 @@ app.put('/api/asistentes/:rut/horario', async (req, res) => {
             return res.status(404).json({ error: 'Asistente no encontrado' })
         }
 
-        console.log(`✅ Horario actualizado para asistente: ${rut}`)
+        // console.log(`[Asistentes] Horario actualizado para asistente: ${rut}`)
         res.json({ exitoso: true, horario_atencion: rows[0].horario_atencion })
     } catch (err) {
-        console.error('Error actualizando horario:', err)
+        // console.error('Error actualizando horario:', err)
         res.status(500).json({ error: err.message })
     }
 })
 
-// Actualizar sede de un asistente
+/**
+ * PUT /api/asistentes/:rut/sede
+ * Actualiza sede operativa del asistente.
+ */
 app.put('/api/asistentes/:rut/sede', async (req, res) => {
     try {
         const { rut } = req.params
@@ -1448,15 +1678,18 @@ app.put('/api/asistentes/:rut/sede', async (req, res) => {
             return res.status(404).json({ error: 'Asistente no encontrado' })
         }
 
-        console.log(`✅ Sede actualizada para asistente: ${rut} -> ${sede}`)
+        // console.log(`[Asistentes] Sede actualizada para asistente: ${rut} -> ${sede}`)
         res.json({ exitoso: true, sede: rows[0].sede })
     } catch (err) {
-        console.error('Error actualizando sede:', err)
+        // console.error('Error actualizando sede:', err)
         res.status(500).json({ error: err.message })
     }
 })
 
-// Obtener sedes únicas para filtros
+/**
+ * GET /api/sedes
+ * Devuelve catálogo de sedes únicas para filtros de UI.
+ */
 app.get('/api/sedes', async (req, res) => {
     try {
         const { rows } = await pool.query(`
@@ -1473,20 +1706,59 @@ app.get('/api/sedes', async (req, res) => {
 // ENDPOINTS GESTION CITAS (useCitas)
 // ============================================
 
-// Crear cita
+/**
+ * POST /api/citas
+ * Crea cita y dispara correo de confirmación (no bloqueante).
+ */
 app.post('/api/citas', async (req, res) => {
     try {
         const { rut_estudiante, rut_asistente, inicio, fin, estado, motivo } = req.body
+        
+        // Insertar la cita
         const { rows } = await pool.query(
             `INSERT INTO citas (rut_estudiante, rut_asistente, inicio, fin, estado, motivo) 
              VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
             [rut_estudiante, rut_asistente, inicio, fin, estado, motivo]
         )
-        res.json(rows[0])
+        
+        const citaCreada = rows[0]
+
+        // Obtener datos del estudiante y asistente para el email
+        try {
+            const [estudianteResult, asistenteResult] = await Promise.all([
+                pool.query('SELECT nombre, correo FROM gestion_fuas WHERE rut = $1', [rut_estudiante]),
+                pool.query('SELECT nombre, sede FROM asistentes_sociales WHERE rut = $1', [rut_asistente])
+            ])
+
+            const estudiante = estudianteResult.rows[0]
+            const asistente = asistenteResult.rows[0]
+
+            if (estudiante?.correo) {
+                const emailService = require('./services/emailService')
+                emailService.enviarConfirmacionCita({
+                    destinatario: estudiante.correo,
+                    nombreEstudiante: estudiante.nombre,
+                    nombreAsistente: asistente?.nombre || 'Asistente Social',
+                    sedeAsistente: asistente?.sede || 'CEDUC',
+                    fechaCita: inicio,
+                    motivo: motivo
+                }).catch(err => {
+                    // console.error('Error enviando email de confirmación:', err)
+                })
+            }
+        } catch (emailError) {
+            // No fallar la creación de cita si el email falla
+            // console.error('Error al enviar email de confirmación:', emailError)
+        }
+
+        res.json(citaCreada)
     } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// Obtener citas por asistente
+/**
+ * GET /api/citas/asistente/:rut
+ * Lista citas de asistente con contexto básico de estudiante.
+ */
 app.get('/api/citas/asistente/:rut', async (req, res) => {
     try {
         const { rut } = req.params
@@ -1503,7 +1775,10 @@ app.get('/api/citas/asistente/:rut', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// Obtener citas hoy asistente
+/**
+ * GET /api/citas/hoy/:rut
+ * Lista agenda del día para panel operativo del asistente.
+ */
 app.get('/api/citas/hoy/:rut', async (req, res) => {
     try {
         const { rut } = req.params
@@ -1521,7 +1796,10 @@ app.get('/api/citas/hoy/:rut', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// Actualizar cita (estado, completada, etc)
+/**
+ * PUT /api/citas/:id
+ * Actualiza campos dinámicos de la cita (estado, observaciones, cierre, etc.).
+ */
 app.put('/api/citas/:id', async (req, res) => {
     try {
         const { id } = req.params
@@ -1545,12 +1823,15 @@ app.put('/api/citas/:id', async (req, res) => {
         if (rowCount === 0) return res.status(404).json({ error: 'Cita no encontrada' })
         res.json({ success: true })
     } catch (err) {
-        console.error('Error actualizando cita:', err)
+        // console.error('Error actualizando cita:', err)
         res.status(500).json({ error: err.message })
     }
 })
 
-// Citas en Rango
+/**
+ * GET /api/citas/rango
+ * Consulta disponibilidad por rango horario para un asistente.
+ */
 app.get('/api/citas/rango', async (req, res) => {
     try {
         const { rut_asistente, inicio, fin } = req.query
@@ -1565,7 +1846,10 @@ app.get('/api/citas/rango', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// Datos Ministerio (Fallback)
+/**
+ * GET /api/datos-ministerio
+ * Endpoint de soporte para recuperación/diagnóstico de datos ministeriales.
+ */
 app.get('/api/datos-ministerio', async (req, res) => {
     try {
         const { rows } = await pool.query('SELECT rut, tipo, beneficio FROM datos_ministerio')
@@ -1573,7 +1857,10 @@ app.get('/api/datos-ministerio', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// Datos Instituto (Fallback)
+/**
+ * GET /api/datos-instituto
+ * Endpoint de soporte para recuperación/diagnóstico de datos institucionales.
+ */
 app.get('/api/datos-instituto', async (req, res) => {
     try {
         const { rows } = await pool.query('SELECT rut, nombre, correo, carrera, sede FROM datos_instituto')
